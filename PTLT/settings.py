@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-c(sj)ii%9f+e!gji&85p_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.18.28', '.onrender.com'] #laptop ip not tablet
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.18.28', '.onrender.com', 'ptlt-webapp.onrender.com'] #laptop ip not tablet
 
 
 # Application definition
@@ -159,7 +159,7 @@ if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True  # For local development
 else:
     CORS_ALLOWED_ORIGINS = [
-        "https://ptlt.onrender.com",  # Update this after deployment
+        "https://ptlt-webapp.onrender.com",  # Update this after deployment
     ]
 
 LOGGING = {
