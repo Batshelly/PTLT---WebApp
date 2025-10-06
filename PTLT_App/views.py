@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.views.decorators.http import require_http_methods   
 import json
 from django.contrib.auth.models import User
+from django.utils.crypto import get_random_string
 from django.db import transaction
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
@@ -188,7 +189,7 @@ def login_view(request):
             user = User.objects.create_user(
                 username=acc['user_id'],
                 email=acc['email'],
-                password=User.objects.make_random_password(),  # Random password (won't be used)
+                password=get_random_string(12),  # Random password (won't be used)
                 first_name=acc['first_name'],
                 last_name=acc['last_name']
             )
@@ -311,7 +312,7 @@ def verify_login_otp(request):
                     user_obj = User.objects.create_user(
                         username=account.user_id,
                         email=account.email,
-                        password=User.objects.make_random_password(),
+                        password=get_random_string(12),
                         first_name=account.first_name,
                         last_name=account.last_name
                     )
