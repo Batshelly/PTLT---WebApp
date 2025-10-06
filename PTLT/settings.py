@@ -149,8 +149,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'tupcptlt@gmail.com'
-EMAIL_HOST_PASSWORD = 'jyec fofe mbkr xjfg'  # Use an App Password for security
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'tupcptlt@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'jyec fofe mbkr xjfg')
+
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -165,13 +166,9 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': None,
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",  # Your mobile app testing
-    "http://127.0.0.1:8080",
-    "http://10.154.95.191:8000", # table ip not laptop
-]
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:8080').split(',')
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL', 'False') == 'True'
 
-CORS_ALLOW_ALL_ORIGINS = True
 
 LOGGING = {
     'version': 1,
