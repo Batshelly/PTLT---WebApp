@@ -143,16 +143,9 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-#EMAIL CONFIG
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.resend.com'
-EMAIL_PORT = 465
-EMAIL_USE_SSL = True   
-EMAIL_USE_TLS = False  
-EMAIL_HOST_USER = 'resend'
-EMAIL_HOST_PASSWORD = os.environ.get('RESEND_API_KEY', '')
-DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'tupcptlt@gmail.com')
+#gumawa hiwalay ng function named email_backend.py
+EMAIL_BACKEND = 'PTLT.email_backend.ResendEmailBackend'
+DEFAULT_FROM_EMAIL = 'tupcptlt@gmail.com'
 
 
 REST_FRAMEWORK = {
