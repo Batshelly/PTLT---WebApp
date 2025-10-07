@@ -15,9 +15,10 @@ class ResendEmailBackend(BaseEmailBackend):
         for message in email_messages:
             try:
                 params = {
-                    "from": message.from_email or 'tupcptlt@gmail.com',
+                    "from": "onboarding@resend.dev",  # Verified Resend address
                     "to": message.to,
                     "subject": message.subject,
+                    "reply_to": "tupcptlt@gmail.com",  # Your actual email for replies
                 }
                 
                 # Handle HTML vs plain text
