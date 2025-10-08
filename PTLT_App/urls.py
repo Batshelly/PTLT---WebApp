@@ -26,7 +26,7 @@ urlpatterns = [
     path('auth/mobile/', views.mobile_auth, name='mobile_auth'), 
     path('force-password-change/', views.force_password_change, name='force_password_change'),
     path('attendance/docx/<int:class_id>/', views.generate_attendance_docx_view, name='generate_attendance_docx'),
-    path('import_class_excel/', views.import_class_from_excel, name='import_class_excel'),
+    path('import_class_pdf/', views.import_class_from_pdf, name='import_class_pdf'),
     path('api/trigger-mobile-sync/', views.trigger_mobile_sync, name='trigger_mobile_sync'),
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
 ]

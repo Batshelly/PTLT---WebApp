@@ -375,27 +375,27 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
     }
-        // Import Class Excel
-    const importExcelBtn = document.getElementById("importClassExcelBtn");
-    const excelFileInput = document.getElementById("excelFileInput");
+        // Import Class PDF
+    const importPdfBtn = document.getElementById("importClassPdfBtn");
+    const pdfFileInput = document.getElementById("pdfFileInput");
 
-    if (importExcelBtn && excelFileInput) {
-        importExcelBtn.addEventListener("click", function () {
-            excelFileInput.click();
+    if (importPdfBtn && pdfFileInput) {
+        importPdfBtn.addEventListener("click", function () {
+            pdfFileInput.click();
         });
 
-        excelFileInput.addEventListener("change", async function (event) {
+        pdfFileInput.addEventListener("change", async function (event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const formData = new FormData();
-            formData.append("excel_file", file);
+            formData.append("pdf_file", file);
 
-            importExcelBtn.disabled = true;
-            importExcelBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importing...';
+            importPdfBtn.disabled = true;
+            importPdfBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importing...';
 
             try {
-                const response = await fetch("/import_class_excel/", {
+                const response = await fetch("/import_class_pdf/", {
                     method: "POST",
                     headers: {
                         "X-CSRFToken": getCSRFToken()
@@ -420,13 +420,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     alert(`Import failed:\n${data.message}`);
                 }
             } catch (err) {
-                console.error('Excel import error:', err);
-                alert(`Error importing Excel: ${err.message}`);
+                console.error('PDF import error:', err);
+                alert(`Error importing PDF: ${err.message}`);
             } finally {
-                importExcelBtn.disabled = false;
-                importExcelBtn.innerHTML = 'Import from Excel';
-                excelFileInput.value = '';
+                importPdfBtn.disabled = false;
+                importPdfBtn.innerHTML = 'Import from PDF';
+                pdfFileInput.value = '';
             }
         });
     }
+
 }); // End of DOMContentLoaded
