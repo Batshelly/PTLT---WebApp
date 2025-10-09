@@ -912,6 +912,7 @@ def instructor_schedule(request):
         'class_schedules': schedules,
     })
 
+
 @admin_required
 def account_management(request):
     role_filter = request.GET.get('role', '')
@@ -928,6 +929,7 @@ def account_management(request):
         accounts = accounts.filter(
             Q(first_name__icontains=search_query) | Q(last_name__icontains=search_query)
         )
+    
     # Order the accounts
     accounts = accounts.order_by('user_id')
 
@@ -947,10 +949,23 @@ def account_management(request):
         return redirect('account_management')
     
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        html = render_to_string('partials/account_table_body.html', {'accounts': accounts})
+        html = render_to_string('partials/account_table_body.html', {'accounts': accounts_page})
         return JsonResponse({'html': html})
 
-    return render(request, 'account_management.html', {'accounts': accounts})
+    # Build query string for pagination links
+    query_params = request.GET.copy()
+    if 'page' in query_params:
+        query_params.pop('page')
+    query_string = query_params.urlencode()
+
+    context = {
+        'accounts': accounts_page,
+        'update_count': update_count,
+        'query_string': query_string,
+    }
+
+    return render(request, 'account_management.html', context)
+
 
 @csrf_exempt
 @admin_required
