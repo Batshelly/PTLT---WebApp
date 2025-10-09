@@ -1080,6 +1080,7 @@ def import_class_schedule(request):
         "errors": results["errors"],
     })
 #try pdf import
+
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
     if 'pdf_file' not in request.FILES:
@@ -1143,7 +1144,7 @@ def import_class_from_pdf(request):
         # Pattern: number. TUPC-XX-XXXX LASTNAME, FIRSTNAME MIDDLENAME
         student_pattern = r'\d+\.\s*(TUPC-\d{2}-\d{4})\s+([A-Z\s,]+?)(?:\s+BET-COET|$)'
         student_matches = re.finditer(student_pattern, full_text)
-        
+
         for match in student_matches:
             student_no = match.group(1).strip()
             name = match.group(2).strip()
@@ -1155,13 +1156,22 @@ def import_class_from_pdf(request):
             
             short_id = id_match.group(1) + id_match.group(2)  # e.g., "220352"
             
-            # Parse name (LASTNAME, FIRSTNAME MIDDLENAME)
+            # Parse name (LASTNAME, FIRSTNAME SECONDNAME MIDDLENAME)
             name_parts = name.split(',')
-            
+
             if len(name_parts) >= 2:
                 last_name = name_parts[0].strip().title()
-                first_name_parts = name_parts[1].strip().split()
-                first_name = first_name_parts[0].title() if first_name_parts else ''
+                
+                # Split the part after comma and take only first 2 names
+                name_after_comma = name_parts[1].strip().split()
+                
+                # Take first two words (first name + second name), skip third (middle name)
+                if len(name_after_comma) >= 2:
+                    first_name = f"{name_after_comma[0]} {name_after_comma[1]}".title()
+                elif len(name_after_comma) == 1:
+                    first_name = name_after_comma[0].title()
+                else:
+                    first_name = name_parts[1].strip().title()
                 
                 all_students.append({
                     'user_id': short_id,
