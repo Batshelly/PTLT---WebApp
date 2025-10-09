@@ -87,8 +87,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
     }
-
-    // Toggle Edit/Save Button for class schedule table
+// Toggle Edit/Save Button for class schedule table
     document.querySelectorAll('.toggle-edit-btn').forEach(button => {
         button.addEventListener('click', async function (e) {
             e.preventDefault();
@@ -101,13 +100,14 @@ document.addEventListener("DOMContentLoaded", function () {
             const timeInCell = row.querySelector('.timein');
             const timeOutCell = row.querySelector('.timeout');
             const dayCell = row.querySelector('.day');
+            const remoteDeviceCell = row.querySelector('.remote_device');
 
             if (!isEditing) {
+                // EDIT MODE
                 const currentProf = profCell.textContent.trim();
                 const currentTimeIn = timeInCell.textContent.trim();
                 const currentTimeOut = timeOutCell.textContent.trim();
                 const currentDay = dayCell.textContent.trim();
-                const remoteDeviceCell = row.querySelector('.remote_device');  // ADD THIS
                 const currentDevice = remoteDeviceCell.textContent.trim();
 
                 let dropdownHTML = `<select class="form-select form-select-sm">`;
@@ -135,19 +135,19 @@ document.addEventListener("DOMContentLoaded", function () {
                 </select>`;
                 
                 remoteDeviceCell.innerHTML = `<select class="form-select form-select-sm">
-                    <option value="1" ${currentDevice === '1' ? 'selected' : ''}>1</option>
-                    <option value="2" ${currentDevice === '2' ? 'selected' : ''}>2</option>
-                    <option value="3" ${currentDevice === '3' ? 'selected' : ''}>3</option>
+                    <option value="1" ${currentDevice === '1' ? 'selected' : ''}>Device 1</option>
+                    <option value="2" ${currentDevice === '2' ? 'selected' : ''}>Device 2</option>
+                    <option value="3" ${currentDevice === '3' ? 'selected' : ''}>Device 3</option>
                 </select>`;
 
                 button.textContent = "Save";
                 button.classList.replace("btn-outline-primary", "btn-outline-success");
             } else {
+                // SAVE MODE
                 const selectedProf = profCell.querySelector('select').value;
                 const selectedTimeIn = timeInCell.querySelector('input').value;
                 const selectedTimeOut = timeOutCell.querySelector('input').value;
                 const selectedDay = dayCell.querySelector('select').value;
-                const remoteDeviceCell = row.querySelector('.remote_device');         // ADD THIS
                 const selectedDevice = remoteDeviceCell.querySelector('select').value;
 
                 if (selectedTimeOut <= selectedTimeIn) {
@@ -156,6 +156,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 if (!confirm("Save changes?")) return;
+
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
                 const response = await fetch(`/update_class_schedule/${rowId}/`, {
                     method: "POST",
@@ -177,16 +180,21 @@ document.addEventListener("DOMContentLoaded", function () {
                     timeInCell.textContent = selectedTimeIn;
                     timeOutCell.textContent = selectedTimeOut;
                     dayCell.textContent = selectedDay;
-                    remoteDeviceCell.textContent = selectedDevice; 
+                    remoteDeviceCell.textContent = selectedDevice;
 
                     button.textContent = "Edit";
                     button.classList.replace("btn-outline-success", "btn-outline-primary");
+                    
+                    alert("✅ Changes saved successfully!");
                 } else {
-                    alert("Failed to save changes.");
+                    alert("❌ Failed to save changes.");
                 }
+                
+                button.disabled = false;
             }
         });
     });
+
 
     // Delete button for class schedule
     document.querySelectorAll('.delete-btn').forEach(button => {
