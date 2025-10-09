@@ -7,7 +7,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.template.loader import render_to_string
 from django.db.models import Q
 from django.core.paginator import Paginator
-
 from django.views.decorators.http import require_http_methods   
 import json
 from django.contrib.auth.models import User
