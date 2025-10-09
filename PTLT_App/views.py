@@ -927,6 +927,13 @@ def account_management(request):
         accounts = accounts.filter(
             Q(first_name__icontains=search_query) | Q(last_name__icontains=search_query)
         )
+    # Order the accounts
+    accounts = accounts.order_by('user_id')
+
+    # Add pagination - 10 accounts per page
+    paginator = Paginator(accounts, 10)
+    page_number = request.GET.get('page')
+    accounts_page = paginator.get_page(page_number)
 
     update_notifications = AccountUploadNotification.objects.filter(is_read=False, notification_type='update')
     update_count = update_notifications.count()

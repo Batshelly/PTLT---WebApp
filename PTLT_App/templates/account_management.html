@@ -125,11 +125,27 @@
 
          <!-- Pagination -->
         <div class="d-flex justify-content-between align-items-center mt-3">
-            <span>Showing 1 result</span>
+            <span>
+                {% if accounts.paginator.count > 0 %}
+                    Showing {{ accounts.start_index }}-{{ accounts.end_index }} of {{ accounts.paginator.count }} results
+                {% else %}
+                    No results found
+                {% endif %}
+            </span>
             <div>
-                <button class="btn btn-outline-secondary btn-sm">&lt;</button>
-                <button class="btn btn-secondary btn-sm">1</button>
-                <button class="btn btn-outline-secondary btn-sm">&gt;</button>
+                {% if accounts.has_previous %}
+                    <a href="?{% url_replace page=accounts.previous_page_number %}" class="btn btn-outline-secondary btn-sm">&lt;</a>
+                {% else %}
+                    <button class="btn btn-outline-secondary btn-sm" disabled>&lt;</button>
+                {% endif %}
+                
+                <button class="btn btn-secondary btn-sm">{{ accounts.number }} / {{ accounts.paginator.num_pages }}</button>
+                
+                {% if accounts.has_next %}
+                    <a href="?{% url_replace page=accounts.next_page_number %}" class="btn btn-outline-secondary btn-sm">&gt;</a>
+                {% else %}
+                    <button class="btn btn-outline-secondary btn-sm" disabled>&gt;</button>
+                {% endif %}
             </div>
         </div>
 
