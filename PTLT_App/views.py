@@ -1222,6 +1222,8 @@ def import_class_from_pdf(request):
         
         for student_info in all_students:
             if not Account.objects.filter(user_id=student_info['user_id']).exists():
+                
+                print(f"DEBUG: Saving student - ID: {student_info['user_id']}, First: '{student_info['first_name']}', Last: '{student_info['last_name']}'")
                 Account.objects.create(
                     user_id=student_info['user_id'],
                     email='',  # Empty - will be filled via mobile app
