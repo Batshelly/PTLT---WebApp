@@ -35,18 +35,41 @@
 <body>
 <div class="bg-white p-4 mx-auto shadow-sm rounded" style="max-width: 1200px;">
     <div class="container py-4 custom-min-width">
-        <div class="d-flex justify-content-between rounded-3 align-items-center mb-3 nav_top d-print-none">
-            <div class="d-flex align-items-center nav_links d-print-none">
-                <strong class="pe-3 me-3 fs-5 ptlt no-print">Document Plotter</strong>
+        <!-- TOP ROW: Document Plotter Title + All Buttons -->
+        <div class="d-flex justify-content-between align-items-center mb-3 nav_top d-print-none">
+            <!-- Document Plotter Title -->
+            <div class="d-flex align-items-center nav_links">
+                <strong class="pe-3 fs-5 ptlt">Document Plotter</strong>
             </div>
             
+            <!-- All Buttons Group -->
+            <div class="d-flex align-items-center gap-2">
+                <!-- Preview & Download Buttons -->
+                {% if selected_schedule_id %}
+                <button class="btn btn-sm btn-primary" onclick="previewDocument()">
+                    <i class="bi bi-eye"></i> Preview
+                </button>
+                <button class="btn btn-sm btn-success" onclick="downloadDocx()">
+                    <i class="bi bi-download"></i> Download
+                </button>
+                {% endif %}
+                
+                <!-- CSV Import Button -->
+                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- SECOND ROW: Subject + Date Range Dropdowns -->
+        <div class="d-flex justify-content-start align-items-center gap-3 mb-3 d-print-none">
             <!-- Subject Selection -->
-            <div class="d-flex align-items-center d-print-none">
+            <div class="d-flex align-items-center">
                 <form method="GET" action="{% url 'attendance_report_template' %}" id="scheduleForm">
                     {% if selected_date_range %}
                         <input type="hidden" name="date_range" value="{{ selected_date_range }}">
                     {% endif %}
-                    <select id="subject" class="form-select" name="schedule">
+                    <select id="subject" class="form-select" name="schedule" style="min-width: 250px;">
                         <option value="">-- Select Subject & Program --</option>
                         {% for sched in schedules %}
                             <option value="{{ sched.id }}" {% if sched.id|stringformat:'s' == selected_schedule_id %}selected{% endif %}>
@@ -58,12 +81,12 @@
             </div>
 
             <!-- Date Range Selection -->
-            <div class="d-flex align-items-center d-print-none">
+            <div class="d-flex align-items-center">
                 <form method="GET" action="{% url 'attendance_report_template' %}" id="dateForm">
                     {% if selected_schedule_id %}
                         <input type="hidden" name="schedule" value="{{ selected_schedule_id }}">
                     {% endif %}
-                    <select id="date-range" class="form-select" name="date_range" {% if not date_ranges %}disabled{% endif %}>
+                    <select id="date-range" class="form-select" name="date_range" style="min-width: 200px;" {% if not date_ranges %}disabled{% endif %}>
                         <option value="">-- Select Date Range --</option>
                         {% for dr in date_ranges %}
                             <option value="{{ dr.value }}" {% if dr.value == selected_date_range %}selected{% endif %}>{{ dr.label }}</option>
@@ -71,33 +94,15 @@
                     </select>
                 </form>
             </div>
-        
-            <!-- Preview & Download Buttons -->
-            <div class="d-flex align-items-center d-print-none">
-                {% if selected_schedule_id %}
-                <button class="btn btn-sm btn-primary me-2" onclick="previewDocument()">
-                    <i class="bi bi-eye"></i> Preview Document
-                </button>
-                <button class="btn btn-sm btn-success" onclick="downloadDocx()">
-                    <i class="bi bi-download"></i> Download DOCX
-                </button>
-                {% endif %}
-            </div>
+        </div>
 
-            <!-- CSV Import Button -->
-            <div class="d-flex align-items-center d-print-none">
-                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
-                    <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
-                </button>
-            </div>
+        <!-- No Records Message (Below Dropdowns) -->
+        {% if selected_schedule_id and not date_ranges %}
+        <div class="mb-3 d-print-none">
+            <small class="text-muted">No attendance records found for this course</small>
         </div>
-    </div>
-        <!-- No Records Message -->
-        <div class="col-md-4 d-flex align-items-end">
-            {% if selected_schedule_id and not date_ranges %}
-                <small class="text-muted">No attendance records found for this course</small>
-            {% endif %}
-        </div>
+        {% endif %}
+
         <!-- Attendance Document Preview -->
         <div id="attendance-doc" class="p-1">
             <!-- Header -->
@@ -280,7 +285,7 @@
                     
                     <div class="alert alert-info">
                         <strong>📋 Sample Format:</strong>
-                        <pre class="mb-0 mt-2">000001,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
+                        <pre class="mb-0 mt-2">00004,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
                     </div>
 
                     <button type="submit" class="btn btn-success w-100">
@@ -308,7 +313,6 @@
 document.addEventListener("DOMContentLoaded", function () {
     const subjectSelect = document.getElementById("subject");
     const dateSelect = document.getElementById("date-range");
-    const thCells = document.querySelectorAll(".date-th");
     let submitTimeout;
 
     if (subjectSelect) {
@@ -387,20 +391,6 @@ function downloadDocx() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-}
-
-// Export to PDF Function
-function exportToPDF() {
-    const element = document.getElementById('attendance-doc');
-    const opt = {
-        margin:       0.5,
-        filename:     'Class_Attendance_Form.pdf',
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
-        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
-        pagebreak:    { mode: ['avoid-all'] }
-    };
-    html2pdf().set(opt).from(element).save();
 }
 
 // CSV Upload Function
