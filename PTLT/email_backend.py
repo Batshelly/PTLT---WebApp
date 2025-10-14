@@ -2,6 +2,7 @@ from django.core.mail.backends.base import BaseEmailBackend
 import resend
 import os
 
+
 class ResendEmailBackend(BaseEmailBackend):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -15,7 +16,7 @@ class ResendEmailBackend(BaseEmailBackend):
         for message in email_messages:
             try:
                 params = {
-                    "from": "onboarding@resend.dev",  # Verified Resend address
+                    "from": message.from_email,  # ← CHANGED: Use from_email from settings
                     "to": message.to,
                     "subject": message.subject,
                     "reply_to": "tupcptlt@gmail.com",  # Your actual email for replies
