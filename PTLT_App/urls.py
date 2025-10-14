@@ -30,6 +30,9 @@ urlpatterns = [
     path('api/trigger-mobile-sync/', views.trigger_mobile_sync, name='trigger_mobile_sync'),
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
+    path('attendance/pdf/<int:class_id>/', views.generate_attendance_pdf_view, name='generate_attendance_pdf'),
+    path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
+]
     
     
 
