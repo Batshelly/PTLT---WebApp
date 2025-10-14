@@ -17,23 +17,18 @@ import dj_database_url
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-c(sj)ii%9f+e!gji&85p_-b0n^%at&d4qm=n1jk8r(yb%5)5oz')
 
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
-
-
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -64,7 +59,7 @@ ROOT_URLCONF = 'PTLT.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'PTLT_App', 'templates')],  # 🔥 ADDED: Template directory
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -79,7 +74,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'PTLT.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -93,9 +87,6 @@ DATABASES = {
         'PORT': os.environ.get('MYSQL_PORT', '3307'),
     }
 }
-
-
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -115,18 +106,13 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -138,15 +124,25 @@ STATICFILES_DIRS = [
 ]
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# 🔥 ADDED: File Upload Settings
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+FILE_UPLOAD_PERMISSIONS = 0o644
+
+# 🔥 ADDED: Media Files (for uploaded documents)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-#gumawa hiwalay ng function named email_backend.py
+
+# Email backend
 EMAIL_BACKEND = 'PTLT.email_backend.ResendEmailBackend'
 DEFAULT_FROM_EMAIL = 'noreply@tupc-ptlt.online'
 
+# REST Framework
 REST_FRAMEWORK = { 
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
@@ -160,12 +156,27 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': None,
 }
 
+# CORS Settings
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:8080').split(',')
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL', 'False') == 'True'
 
-# Add this line:
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://*.railway.app').split(',')
+# 🔥 UPDATED: CSRF Settings for Railway
+# Replace 'your-app-name' with your actual Railway app domain
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.railway.app',
+    'https://tupc-ptlt.online',  # Your domain
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 
+# 🔥 ADDED: Security settings for Railway deployment
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = False  # Railway handles SSL
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+# Logging
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

@@ -1890,7 +1890,11 @@ def generate_attendance_docx_view(request, class_id):
         date_range = request.GET.get('date_range', '')
         
         # Path to your template file
-        template_path = os.path.join(settings.BASE_DIR, 'PTLTApp', 'templates', 'attendance_template.docx')
+        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        
+        # Check if template exists
+        if not os.path.exists(template_path):
+            return HttpResponse(f"Template file not found at: {template_path}", status=500)
         
         # Load the template
         doc = DocxTemplate(template_path)
@@ -1921,8 +1925,8 @@ def generate_attendance_docx_view(request, class_id):
                 
                 dates = list(attendance_dates)[:8]  # Limit to 8 dates
                 
-            except (ValueError, TypeError):
-                # If date parsing fails, use default
+            except (ValueError, TypeError) as e:
+                print(f"Date parsing error: {e}")
                 pass
         
         # If no valid date range, generate default 8 dates starting from today
@@ -2012,9 +2016,11 @@ def generate_attendance_docx_view(request, class_id):
         return response
         
     except Exception as e:
-        print(f"Error generating document: {str(e)}")  # Debug
+        print(f"Error generating document: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return HttpResponse(f"Error generating document: {str(e)}", status=500)
-    
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def mobile_auth(request):
