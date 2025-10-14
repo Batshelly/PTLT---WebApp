@@ -86,6 +86,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
+from django.views.decorators.clickjacking import xframe_options_exempt
 
 # Custom authentication decorators
 def admin_required(view_func):
@@ -1954,6 +1955,7 @@ def mobile_login(request):
 
 # For docx file generation
 @instructor_or_admin_required
+@xframe_options_exempt  # Allow iframe preview
 def generate_attendance_pdf_view(request, class_id):
     """Generate PDF attendance form matching DOCX template"""
     try:
