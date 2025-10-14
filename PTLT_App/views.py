@@ -1012,96 +1012,158 @@ from .models import Account, ClassSchedule, CourseSection
 @csrf_exempt
 @admin_required
 def import_class_schedule(request):
-    print("⚡ Import request received")
-    print("Method:", request.method)
-    print("FILES:", request.FILES)
-    print("POST:", request.POST)
-
-    if request.method != "POST":
-        return JsonResponse({"status": "error", "message": "Only POST method allowed."}, status=400)
-
-    if "csv_file" not in request.FILES:
-        return JsonResponse({"status": "error", "message": "No CSV file uploaded."}, status=400)
-
-    csv_file = request.FILES["csv_file"]
-    print(f"📂 Received file: {csv_file.name}, size={csv_file.size} bytes")
-
+    """Import class schedules from CSV file"""
+    
+    print(f"Request method: {request.method}")
+    print(f"Files: {list(request.FILES.keys())}")
+    
+    if request.method != 'POST':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Only POST method allowed',
+            'imported': 0,
+            'skipped': 0,
+            'errors': ['Only POST method allowed']
+        }, status=405)
+    
+    if 'csv_file' not in request.FILES:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'No CSV file uploaded',
+            'imported': 0,
+            'skipped': 0,
+            'errors': ['No CSV file found in request']
+        }, status=400)
+    
     try:
-        data = csv_file.read().decode("utf-8")
-        io_string = io.StringIO(data)
+        csv_file = request.FILES['csv_file']
+        print(f"Processing file: {csv_file.name}, size: {csv_file.size} bytes")
+        
+        # Read CSV file
+        decoded_file = csv_file.read().decode('utf-8')
+        io_string = io.StringIO(decoded_file)
         reader = csv.DictReader(io_string)
+        
+        results = {
+            'imported': 0,
+            'skipped': 0,
+            'errors': []
+        }
+        
+        for line_num, row in enumerate(reader, start=2):
+            try:
+                # Get data from CSV
+                professor_user_id = row.get('professor_user_id', '').strip()
+                course_title = row.get('course_title', '').strip()
+                course_code = row.get('course_code', '').strip()
+                course_section_id = row.get('course_section_id', '').strip()
+                time_in_str = row.get('time_in', '').strip()
+                time_out_str = row.get('time_out', '').strip()
+                days = row.get('days', '').strip()
+                grace_period = row.get('grace_period', '15').strip()
+                student_count = row.get('student_count', '0').strip()
+                remote_device = row.get('remote_device', '').strip()
+                room_assignment = row.get('room_assignment', '').strip()
+                
+                print(f"Line {line_num}: Processing {course_code}")
+                
+                # Validate required fields
+                if not all([professor_user_id, course_code, course_section_id, time_in_str, time_out_str]):
+                    results['errors'].append(f"Line {line_num}: Missing required fields")
+                    results['skipped'] += 1
+                    continue
+                
+                # Get professor (matching your Account model)
+                try:
+                    professor = Account.objects.get(user_id=professor_user_id, role='Instructor')
+                    print(f"Found professor: {professor.first_name} {professor.last_name}")
+                except Account.DoesNotExist:
+                    results['errors'].append(f"Line {line_num}: Instructor with user_id '{professor_user_id}' not found")
+                    results['skipped'] += 1
+                    continue
+                
+                # Get course section (matching your CourseSection model)
+                try:
+                    course_section = CourseSection.objects.get(id=int(course_section_id))
+                    print(f"Found course section: {course_section.course_section}")
+                except CourseSection.DoesNotExist:
+                    results['errors'].append(f"Line {line_num}: CourseSection with ID '{course_section_id}' not found")
+                    results['skipped'] += 1
+                    continue
+                except ValueError:
+                    results['errors'].append(f"Line {line_num}: Invalid course_section_id '{course_section_id}' (must be a number)")
+                    results['skipped'] += 1
+                    continue
+                
+                # Parse times
+                try:
+                    time_in = datetime.strptime(time_in_str, '%H:%M').time()
+                    time_out = datetime.strptime(time_out_str, '%H:%M').time()
+                except ValueError:
+                    results['errors'].append(f"Line {line_num}: Invalid time format (use HH:MM, e.g., 09:30)")
+                    results['skipped'] += 1
+                    continue
+                
+                # Create or update class schedule (matching your ClassSchedule model)
+                class_schedule, created = ClassSchedule.objects.update_or_create(
+                    course_code=course_code,
+                    course_section=course_section,
+                    defaults={
+                        'course_title': course_title or course_code,  # Use course_code if title is empty
+                        'professor': professor,
+                        'time_in': time_in,
+                        'time_out': time_out,
+                        'days': days,
+                        'grace_period': int(grace_period) if grace_period.isdigit() else 15,
+                        'student_count': int(student_count) if student_count.isdigit() else 0,
+                        'remote_device': remote_device,
+                        'room_assignment': room_assignment,
+                    }
+                )
+                
+                action = "Created" if created else "Updated"
+                results['imported'] += 1
+                print(f"{action} class schedule: {course_code}")
+                
+            except Exception as e:
+                error_msg = f"Line {line_num}: {str(e)}"
+                results['errors'].append(error_msg)
+                results['skipped'] += 1
+                print(f"Error: {error_msg}")
+                import traceback
+                traceback.print_exc()
+        
+        # Determine status
+        if results['imported'] == 0 and results['skipped'] > 0:
+            status = 'failed'
+        elif results['skipped'] > 0:
+            status = 'partial'
+        else:
+            status = 'ok'
+        
+        response_data = {
+            'status': status,
+            'imported': results['imported'],
+            'skipped': results['skipped'],
+            'errors': results['errors'][:10]  # Limit to first 10 errors
+        }
+        
+        print(f"Import complete. Returning: {response_data}")
+        return JsonResponse(response_data)
+        
     except Exception as e:
-        return JsonResponse({"status": "error", "message": f"Failed to read CSV: {e}"}, status=400)
-
-    results = {
-        "imported": 0,
-        "skipped": 0,
-        "errors": []
-    }
-
-    line_num = 1  # header = line 1
-    for row in reader:
-        line_num += 1
-        print(f"[IMPORT] Processing line {line_num}: {row}")
-
-        prof_user_id = row.get("professor_user_id")
-        professor = None
-        if prof_user_id:
-            professor = Account.objects.filter(user_id=prof_user_id, role="Instructor").first()
-
-        if not professor:
-            msg = f"Line {line_num}: Professor with user_id '{prof_user_id}' not found in accounts."
-            print("❌", msg)
-            results["skipped"] += 1
-            results["errors"].append(msg)
-            continue
-
-        section_id = row.get("course_section_id")
-        course_section = None
-        if section_id:
-            course_section = CourseSection.objects.filter(id=section_id).first()
-
-        if not course_section:
-            msg = f"Line {line_num}: Section '{section_id}' not found in CourseSection."
-            print("❌", msg)
-            results["skipped"] += 1
-            results["errors"].append(msg)
-            continue
-
-        try:
-            ClassSchedule.objects.create(
-                professor=professor,
-                course_title=row.get("course_title"),
-                course_code=row.get("course_code"),
-                course_section=course_section,
-                time_in=row.get("time_in"),
-                time_out=row.get("time_out"),
-                days=row.get("days"),
-                grace_period=row.get("grace_period") or 0,
-                student_count=row.get("student_count") or 0,
-                remote_device=row.get("remote_device"),
-                room_assignment=row.get("room_assignment"),
-            )
-            results["imported"] += 1
-            print(f"✅ Line {line_num}: Schedule imported successfully.")
-        except Exception as e:
-            msg = f"Line {line_num}: Failed to save schedule. Error: {str(e)}"
-            print("❌", msg)
-            results["skipped"] += 1
-            results["errors"].append(msg)
-
-    if results["imported"] == 0:
-        status = "failed"  # Nothing imported
-    elif results["skipped"] > 0:
-        status = "partial"  # Some succeeded, some failed
-    else:
-        status = "ok"  # Everything succeeded
-    return JsonResponse({
-        "status": status,
-        "imported": results["imported"],
-        "skipped": results["skipped"],
-        "errors": results["errors"],
-    })
+        error_message = str(e)
+        print(f"Fatal error in CSV import: {error_message}")
+        import traceback
+        traceback.print_exc()
+        
+        return JsonResponse({
+            'status': 'error',
+            'message': error_message,
+            'imported': 0,
+            'skipped': 0,
+            'errors': [f'Server error: {error_message}']
+        }, status=500)
 #try pdf import
 
 @require_http_methods(["POST"])
