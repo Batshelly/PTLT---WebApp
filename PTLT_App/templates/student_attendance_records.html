@@ -7,100 +7,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Attendance Records</title>
 
-    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="{% static 'css/student_attendance_records.css' %}">
 
     <style>
-        table td, table th {
-            border: 1px solid black !important;
-        }
-        table {
-            border-collapse: collapse !important;
-        }
-        .attendance-table th,
-        .attendance-table td {
-            white-space: nowrap;
-        }
+        table td, table th { border: 1px solid black !important; }
+        table { border-collapse: collapse !important; }
+        .attendance-table th, .attendance-table td { white-space: nowrap; }
     </style>
 </head>
 <body>
 <div class="bg-white p-4 mx-auto shadow-sm rounded" style="max-width: 1200px;">
     <div class="container py-4 custom-min-width">
-        <!-- TOP ROW: Document Plotter Title + All Buttons -->
+        <!-- TOP ROW -->
         <div class="d-flex justify-content-between align-items-center mb-3 nav_top d-print-none">
             <div class="d-flex align-items-center nav_links">
                 <strong class="pe-3 fs-5 ptlt">Document Plotter</strong>
             </div>
             
             <div class="d-flex align-items-center gap-2">
-                <!-- Preview DOCX Button -->
-                <button class="btn btn-sm btn-primary" onclick="previewDocxFile()" {% if not selected_schedule_id %}disabled{% endif %}>
+                <button class="btn btn-sm btn-primary" id="previewBtn" onclick="previewDocxFile()" disabled>
                     <i class="bi bi-eye"></i> Preview DOCX
                 </button>
-                
-                <!-- Download Button -->
-                <button class="btn btn-sm btn-success" onclick="downloadDocx()" {% if not selected_schedule_id %}disabled{% endif %}>
+                <button class="btn btn-sm btn-success" id="downloadBtn" onclick="downloadDocx()" disabled>
                     <i class="bi bi-download"></i> Download DOCX
                 </button>
-                
-                <!-- CSV Import Button -->
                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
                     <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
                 </button>
             </div>
         </div>
 
-        <!-- SECOND ROW: Subject + Date Range Dropdowns -->
+        <!-- DROPDOWNS -->
         <div class="d-flex justify-content-start align-items-center gap-3 mb-3 d-print-none">
-            <!-- Subject Selection -->
-            <form method="GET" action="{% url 'attendance_report_template' %}" id="scheduleForm" class="m-0">
-                {% if selected_date_range %}
-                    <input type="hidden" name="date_range" value="{{ selected_date_range }}">
-                {% endif %}
-                <select id="subjectSelect" class="form-select" name="schedule" style="min-width: 250px;">
-                    <option value="">-- Select Subject & Program --</option>
-                    {% for sched in schedules %}
-                        <option value="{{ sched.id }}" {% if sched.id|stringformat:'s' == selected_schedule_id %}selected{% endif %}>
-                            {{ sched.course_code }} - {{ sched.course_section }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </form>
+            <select id="subjectSelect" class="form-select" style="min-width: 250px;">
+                <option value="">-- Select Subject & Program --</option>
+                {% for sched in schedules %}
+                    <option value="{{ sched.id }}">{{ sched.course_code }} - {{ sched.course_section }}</option>
+                {% endfor %}
+            </select>
 
-            <!-- Date Range Selection -->
-            <form method="GET" action="{% url 'attendance_report_template' %}" id="dateForm" class="m-0">
-                {% if selected_schedule_id %}
-                    <input type="hidden" name="schedule" value="{{ selected_schedule_id }}">
-                {% endif %}
-                <select id="dateRangeSelect" class="form-select" name="date_range" style="min-width: 200px;" {% if not date_ranges %}disabled{% endif %}>
-                    <option value="">-- Select Date Range --</option>
-                    {% for dr in date_ranges %}
-                        <option value="{{ dr.value }}" {% if dr.value == selected_date_range %}selected{% endif %}>{{ dr.label }}</option>
-                    {% endfor %}
-                </select>
-            </form>
+            <select id="dateRangeSelect" class="form-select" style="min-width: 200px;" disabled>
+                <option value="">-- Select Date Range --</option>
+            </select>
         </div>
 
-        <!-- No Records Message -->
-        {% if selected_schedule_id and not date_ranges %}
-        <div class="mb-3 d-print-none">
+        <div id="noRecordsMsg" class="mb-3 d-print-none" style="display: none;">
             <small class="text-muted">No attendance records found for this course</small>
         </div>
-        {% endif %}
 
-        <!-- Attendance Document Preview -->
+        <!-- DOCUMENT -->
         <div id="attendance-doc" class="p-1">
-            <!-- Header -->
             <table class="table table-bordered border-dark w-100 align-middle">
                 <tr>
-                    <td class="text-center align-middle" style="width: 120px;">
-                        <div class="logo-box">LOGO</div>
-                    </td>
+                    <td class="text-center align-middle" style="width: 120px;"><div class="logo-box">LOGO</div></td>
                     <td class="text-center align-middle" colspan="2">
                         <strong>TECHNOLOGICAL UNIVERSITY OF THE PHILIPPINES</strong><br>
                         <strong>CAVITE CAMPUS</strong><br>
@@ -110,43 +72,35 @@
                 </tr>
                 <tr>
                     <td class="text-center align-middle"><strong>DEPARTMENT</strong></td>
-                    <td class="text-center align-middle">
-                        <strong>CLASS ATTENDANCE MONITORING FORM</strong>
-                    </td>
-                    <td class="text-center align-middle" style="width: 100px;">
-                        <small>Page 1/1</small>
-                    </td>
+                    <td class="text-center align-middle"><strong>CLASS ATTENDANCE MONITORING FORM</strong></td>
+                    <td class="text-center align-middle" style="width: 100px;"><small>Page 1/1</small></td>
                 </tr>
             </table>
 
-            <!-- Class Details -->
             <table class="table table-bordered border-dark mb-3">
                 <tbody>
-                    <tr class="table-dark text-white">
-                        <td colspan="4" class="fw-bold">DETAILS OF CLASS</td>
-                    </tr>
+                    <tr class="table-dark text-white"><td colspan="4" class="fw-bold">DETAILS OF CLASS</td></tr>
                     <tr>
                         <td><strong>SUBJECT</strong></td>
-                        <td>{{ attendance_data.subject|default:"[Subject]" }}</td>
+                        <td id="classSubject">[Subject]</td>
                         <td><strong>FACULTY IN-CHARGE</strong></td>
-                        <td>{{ attendance_data.faculty_name|default:"[Faculty Name]" }}</td>
+                        <td id="classFaculty">[Faculty Name]</td>
                     </tr>
                     <tr>
                         <td><strong>COURSE</strong></td>
-                        <td>{{ attendance_data.course|default:"[Course]" }}</td>
+                        <td id="classCourse">[Course]</td>
                         <td><strong>BLDG. & ROOM NO.</strong></td>
-                        <td>{{ attendance_data.room|default:"[Room]" }}</td>
+                        <td id="classRoom">[Room]</td>
                     </tr>
                     <tr>
                         <td><strong>YEAR & SECTION</strong></td>
-                        <td>{{ attendance_data.year_section|default:"[Section]" }}</td>
+                        <td id="classSection">[Section]</td>
                         <td><strong>SCHEDULE (DAY & TIME)</strong></td>
-                        <td>{{ attendance_data.schedule|default:"[Schedule]" }}</td>
+                        <td id="classSchedule">[Schedule]</td>
                     </tr>
                 </tbody>
             </table>
 
-            <!-- Attendance Table -->
             <div class="table-responsive">
                 <table class="table table-bordered border-dark attendance-table">
                     <thead class="table-secondary text-dark">
@@ -160,68 +114,25 @@
                             <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
                             <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
                         </tr>
-                        <tr class="bg-white">
-                            {% for date in date_headers %}
-                                <th class="date-th">{{ date|date:"m/d" }}</th>
-                            {% endfor %}
-                            {% for i in num_empty_date_columns %}
-                                <th class="date-th"></th>
-                            {% endfor %}
+                        <tr class="bg-white" id="dateHeaderRow">
+                            <th></th><th></th><th></th><th></th>
+                            <th></th><th></th><th></th><th></th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for row in attendance_table %}
-                        <tr>
-                            <td>{{ forloop.counter }}</td>
-                            <td>{{ row.name }}</td>
-                            <td>{{ row.sex }}</td>
-                            {% for attendance in row.dates %}
-                            <td>
-                                {% if attendance.time_in and attendance.time_out %}
-                                    {% if attendance.time_in|time:"H:i" == "00:00" or attendance.time_out|time:"H:i" == "00:00" %}
-                                        Absent
-                                    {% else %}
-                                        {{ attendance.time_in|time:"H:i" }} - {{ attendance.time_out|time:"H:i" }}
-                                    {% endif %}
-                                {% elif attendance.status %}
-                                    {{ attendance.status }}
-                                {% endif %}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                        
-                        <!-- Generate empty rows to fill up to 40 total -->
-                        {% with attendance_table|length as student_count %}
-                            {% with "0123456789012345678901234567890123456789"|make_list as numbers %}
-                                {% for num in numbers %}
-                                    {% if forloop.counter0|add:student_count < 40 %}
-                                    <tr>
-                                        <td>{{ forloop.counter0|add:student_count|add:1 }}</td>
-                                        <td></td>
-                                        <td></td>
-                                        <td></td><td></td><td></td><td></td>
-                                        <td></td><td></td><td></td><td></td>
-                                    </tr>
-                                    {% endif %}
-                                {% endfor %}
-                            {% endwith %}
-                        {% endwith %}
+                    <tbody id="attendanceTableBody">
+                        <!-- Will be filled by JavaScript -->
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Student Count -->
-        {% if students_list %}
-        <div class="mt-2 mb-3 d-print-none">
-            <small class="text-muted">Showing {{ students_list|length }} students</small>
+        <div id="studentCount" class="mt-2 mb-3 d-print-none" style="display: none;">
+            <small class="text-muted"></small>
         </div>
-        {% endif %}
     </div>
 </div>
 
-<!-- DOCX Preview Modal -->
+<!-- Modals same as before... -->
 <div class="modal fade" id="previewModal" tabindex="-1">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
@@ -231,54 +142,48 @@
             </div>
             <div class="modal-body p-0">
                 <div id="loadingSpinner" class="text-center p-5">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-3">Loading document preview...</p>
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-3">Loading...</p>
                 </div>
                 <iframe id="docPreviewFrame" style="width:100%; height:100%; border:none; display:none;"></iframe>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-success" onclick="downloadDocx()">Download DOCX</button>
+                <button type="button" class="btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn-success" onclick="downloadDocx()">Download</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- CSV Import Modal -->
 <div class="modal fade" id="csvImportModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title">📁 Import Class Schedules from CSV</h5>
+                <h5 class="modal-title">📁 Import Class Schedules</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="csvUploadForm" enctype="multipart/form-data">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label for="csvFile" class="form-label fw-bold">Select CSV File</label>
+                        <label class="form-label fw-bold">Select CSV File</label>
                         <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
                         <div class="form-text mt-2">
                             <strong>Required columns:</strong><br>
                             <code>professor_user_id, course_title, course_code, course_section_id, time_in, time_out, days, grace_period, student_count, remote_device, room_assignment</code>
                         </div>
                     </div>
-                    
                     <div class="alert alert-info">
-                        <strong>📋 Sample Format:</strong>
-                        <pre class="mb-0 mt-2">00004,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
+                        <strong>📋 Sample:</strong>
+                        <pre class="mb-0 mt-2">00004,Web Dev,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
                     </div>
-
                     <button type="submit" class="btn btn-success w-100">
                         <i class="bi bi-upload"></i> Upload CSV
                     </button>
                 </form>
-                
                 <div id="uploadResults" class="mt-3" style="display: none;">
-                    <div class="alert" role="alert">
-                        <h6 class="fw-bold">Import Results:</h6>
+                    <div class="alert">
+                        <h6 class="fw-bold">Results:</h6>
                         <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount">0</span></p>
                         <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount">0</span></p>
                         <div id="errorsList"></div>
@@ -289,93 +194,166 @@
     </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
-// Subject dropdown - submit form on change
+let selectedClassId = null;
+let selectedDateRange = null;
+
+// Initialize empty table
+function initEmptyTable() {
+    let html = '';
+    for(let i = 1; i <= 40; i++) {
+        html += `<tr><td>${i}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    }
+    document.getElementById('attendanceTableBody').innerHTML = html;
+}
+initEmptyTable();
+
+// Subject change
 document.getElementById('subjectSelect').addEventListener('change', function() {
-    if (this.value) {
-        document.getElementById('scheduleForm').submit();
-    }
-});
-
-// Date range dropdown - submit form on change
-document.getElementById('dateRangeSelect').addEventListener('change', function() {
-    if (this.value) {
-        document.getElementById('dateForm').submit();
-    }
-});
-
-// Preview DOCX File
-function previewDocxFile() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const selectedClassId = urlParams.get('schedule');
-    const dateRange = urlParams.get('date_range');
+    selectedClassId = this.value;
+    selectedDateRange = null;
     
     if (!selectedClassId) {
-        alert('Please select a class first!');
+        document.getElementById('dateRangeSelect').disabled = true;
+        document.getElementById('dateRangeSelect').innerHTML = '<option value="">-- Select Date Range --</option>';
+        document.getElementById('previewBtn').disabled = true;
+        document.getElementById('downloadBtn').disabled = true;
+        clearTable();
         return;
     }
+    
+    // Fetch data
+    fetch(`/api/attendance_data/?schedule=${selectedClassId}`)
+        .then(r => r.json())
+        .then(data => {
+            // Update class details
+            document.getElementById('classSubject').textContent = data.class_data.subject;
+            document.getElementById('classFaculty').textContent = data.class_data.faculty_name;
+            document.getElementById('classCourse').textContent = data.class_data.course;
+            document.getElementById('classRoom').textContent = data.class_data.room;
+            document.getElementById('classSection').textContent = data.class_data.year_section;
+            document.getElementById('classSchedule').textContent = data.class_data.schedule;
+            
+            // Update date ranges
+            let dateHtml = '<option value="">-- Select Date Range --</option>';
+            data.date_ranges.forEach(dr => {
+                dateHtml += `<option value="${dr.value}">${dr.label}</option>`;
+            });
+            document.getElementById('dateRangeSelect').innerHTML = dateHtml;
+            document.getElementById('dateRangeSelect').disabled = data.date_ranges.length === 0;
+            
+            // Enable buttons
+            document.getElementById('previewBtn').disabled = false;
+            document.getElementById('downloadBtn').disabled = false;
+            
+            // Show message if no records
+            if (data.date_ranges.length === 0) {
+                document.getElementById('noRecordsMsg').style.display = 'block';
+            } else {
+                document.getElementById('noRecordsMsg').style.display = 'none';
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Error loading class data');
+        });
+});
 
+// Date range change
+document.getElementById('dateRangeSelect').addEventListener('change', function() {
+    selectedDateRange = this.value;
+    
+    if (!selectedDateRange || !selectedClassId) return;
+    
+    fetch(`/api/attendance_data/?schedule=${selectedClassId}&date_range=${selectedDateRange}`)
+        .then(r => r.json())
+        .then(data => {
+            // Update date headers
+            let headerHtml = '';
+            for(let i = 0; i < 8; i++) {
+                headerHtml += `<th class="date-th">${data.date_headers[i] || ''}</th>`;
+            }
+            document.getElementById('dateHeaderRow').innerHTML = headerHtml;
+            
+            // Update table
+            let tableHtml = '';
+            data.attendance_table.forEach((student, idx) => {
+                tableHtml += `<tr><td>${idx+1}</td><td>${student.name}</td><td>${student.sex}</td>`;
+                student.dates.forEach(att => {
+                    if (att.time_in && att.time_out) {
+                        tableHtml += `<td>${att.time_in} - ${att.time_out}</td>`;
+                    } else if (att.status) {
+                        tableHtml += `<td>${att.status}</td>`;
+                    } else {
+                        tableHtml += `<td></td>`;
+                    }
+                });
+                tableHtml += `</tr>`;
+            });
+            
+            // Fill remaining rows
+            for(let i = data.attendance_table.length; i < 40; i++) {
+                tableHtml += `<tr><td>${i+1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+            }
+            
+            document.getElementById('attendanceTableBody').innerHTML = tableHtml;
+            
+            // Show count
+            if (data.student_count > 0) {
+                document.getElementById('studentCount').innerHTML = `<small class="text-muted">Showing ${data.student_count} students</small>`;
+                document.getElementById('studentCount').style.display = 'block';
+            }
+        });
+});
+
+function clearTable() {
+    document.getElementById('classSubject').textContent = '[Subject]';
+    document.getElementById('classFaculty').textContent = '[Faculty]';
+    document.getElementById('classCourse').textContent = '[Course]';
+    document.getElementById('classRoom').textContent = '[Room]';
+    document.getElementById('classSection').textContent = '[Section]';
+    document.getElementById('classSchedule').textContent = '[Schedule]';
+    document.getElementById('dateHeaderRow').innerHTML = '<th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>';
+    initEmptyTable();
+    document.getElementById('noRecordsMsg').style.display = 'none';
+    document.getElementById('studentCount').style.display = 'none';
+}
+
+function previewDocxFile() {
+    if (!selectedClassId) { alert('Select a class first!'); return; }
     const modal = new bootstrap.Modal(document.getElementById('previewModal'));
     modal.show();
-
     document.getElementById('loadingSpinner').style.display = 'block';
     document.getElementById('docPreviewFrame').style.display = 'none';
-
+    
     let docUrl = `${window.location.origin}/attendance/docx/${selectedClassId}/`;
-    if (dateRange) {
-        docUrl += `?date_range=${dateRange}`;
-    }
-
-    const encodedUrl = encodeURIComponent(docUrl);
-    const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+    if (selectedDateRange) docUrl += `?date_range=${selectedDateRange}`;
     
     const iframe = document.getElementById('docPreviewFrame');
-    iframe.src = viewerUrl;
-    
-    iframe.onload = function() {
+    iframe.src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(docUrl)}`;
+    iframe.onload = () => {
         document.getElementById('loadingSpinner').style.display = 'none';
         iframe.style.display = 'block';
     };
 }
 
-// Download DOCX
 function downloadDocx() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const selectedClassId = urlParams.get('schedule');
-    const dateRange = urlParams.get('date_range');
-    
-    if (!selectedClassId) {
-        alert('Please select a class first!');
-        return;
-    }
-
-    let downloadUrl = `/attendance/docx/${selectedClassId}/`;
-    if (dateRange) {
-        downloadUrl += `?date_range=${dateRange}`;
-    }
-    
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = '';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!selectedClassId) { alert('Select a class first!'); return; }
+    let url = `/attendance/docx/${selectedClassId}/`;
+    if (selectedDateRange) url += `?date_range=${selectedDateRange}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.click();
 }
 
-// CSV Upload
+// CSV Upload (same as before)
 document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
     const csvFile = document.getElementById('csvFile').files[0];
-    if (!csvFile) {
-        alert('Please select a CSV file');
-        return;
-    }
+    if (!csvFile) { alert('Select a file'); return; }
     
     const formData = new FormData();
     formData.append('csv_file', csvFile);
-    
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
     
     const resultsDiv = document.getElementById('uploadResults');
@@ -389,19 +367,16 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
         headers: {'X-CSRFToken': csrfToken},
         credentials: 'same-origin'
     })
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
         document.getElementById('importedCount').textContent = data.imported || 0;
         document.getElementById('skippedCount').textContent = data.skipped || 0;
         
         const errorsList = document.getElementById('errorsList');
         errorsList.innerHTML = '';
-        
         if (data.errors && data.errors.length > 0) {
             errorsList.innerHTML = '<strong class="text-danger">Errors:</strong><ul>';
-            data.errors.forEach(err => {
-                errorsList.innerHTML += `<li>${err}</li>`;
-            });
+            data.errors.forEach(err => { errorsList.innerHTML += `<li>${err}</li>`; });
             errorsList.innerHTML += '</ul>';
         }
         
@@ -422,12 +397,10 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
             setTimeout(() => location.reload(), 2000);
         }
     })
-    .catch(error => {
-        console.error('Error:', error);
-        const resultsDiv = document.getElementById('uploadResults');
-        resultsDiv.style.display = 'block';
+    .catch(err => {
+        console.error('Error:', err);
         resultsDiv.querySelector('.alert').className = 'alert alert-danger';
-        resultsDiv.querySelector('.alert h6').textContent = '❌ Upload Failed';
+        resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
     });
 });
 </script>

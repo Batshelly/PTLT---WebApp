@@ -2168,3 +2168,111 @@ def mobile_update_account(request, user_id):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@instructor_or_admin_required
+def get_attendance_data_api(request):
+    """API endpoint to get attendance data as JSON"""
+    schedule_id = request.GET.get('schedule')
+    date_range = request.GET.get('date_range')
+    
+    if not schedule_id:
+        return JsonResponse({'error': 'No schedule selected'}, status=400)
+    
+    try:
+        class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        
+        # Get class details
+        class_data = {
+            'subject': class_schedule.course_title or class_schedule.course_code,
+            'faculty_name': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
+            'course': class_schedule.course_section.course_name if class_schedule.course_section else "",
+            'room': class_schedule.room_assignment or "TBA",
+            'year_section': class_schedule.course_section.course_section if class_schedule.course_section else "",
+            'schedule': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
+        }
+        
+        # Get date ranges
+        attendance_dates = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).values_list('date', flat=True).distinct().order_by('date')
+        
+        date_ranges = []
+        dates_list = list(attendance_dates)
+        for i in range(0, len(dates_list), 8):
+            chunk = dates_list[i:i+8]
+            if chunk:
+                start_date = chunk[0]
+                end_date = chunk[-1]
+                date_ranges.append({
+                    'value': f"{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}",
+                    'label': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
+                })
+        
+        # Get attendance data if date range is selected
+        attendance_table = []
+        date_headers = []
+        
+        if date_range:
+            try:
+                start_str, end_str = date_range.split('_to_')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+                
+                # Get dates
+                dates_in_range = AttendanceRecord.objects.filter(
+                    class_schedule=class_schedule,
+                    date__range=[start_date, end_date]
+                ).values_list('date', flat=True).distinct().order_by('date')
+                
+                date_headers = [d.strftime('%m/%d') for d in list(dates_in_range)[:8]]
+                
+                # Get students
+                students = Account.objects.filter(
+                    course_section=class_schedule.course_section,
+                    role='Student'
+                ).order_by('last_name', 'first_name')
+                
+                # Get attendance records
+                for student in students:
+                    student_data = {
+                        'name': f"{student.last_name}, {student.first_name}",
+                        'sex': student.sex or '',
+                        'dates': []
+                    }
+                    
+                    for date in list(dates_in_range)[:8]:
+                        try:
+                            record = AttendanceRecord.objects.get(
+                                class_schedule=class_schedule,
+                                student=student,
+                                date=date
+                            )
+                            student_data['dates'].append({
+                                'time_in': record.time_in.strftime('%H:%M') if record.time_in else '',
+                                'time_out': record.time_out.strftime('%H:%M') if record.time_out else '',
+                                'status': record.status
+                            })
+                        except AttendanceRecord.DoesNotExist:
+                            student_data['dates'].append({
+                                'time_in': '',
+                                'time_out': '',
+                                'status': ''
+                            })
+                    
+                    attendance_table.append(student_data)
+                
+            except (ValueError, TypeError):
+                pass
+        
+        return JsonResponse({
+            'class_data': class_data,
+            'date_ranges': date_ranges,
+            'date_headers': date_headers,
+            'attendance_table': attendance_table,
+            'student_count': len(attendance_table)
+        })
+        
+    except ClassSchedule.DoesNotExist:
+        return JsonResponse({'error': 'Class schedule not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
