@@ -76,7 +76,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from django.conf import settings
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 # Custom authentication decorators
 def admin_required(view_func):
@@ -1881,66 +1881,117 @@ def mobile_login(request):
 # For docx file generation
 @instructor_or_admin_required
 def generate_attendance_docx_view(request, class_id):
-    """
-    Generate attendance template as .docx file
-    """
+    """Generate attendance template as .docx file"""
     try:
+        # Get class schedule data
+        classschedule = get_object_or_404(ClassSchedule, id=class_id)
+        
+        # Get date range from request
+        date_range = request.GET.get('date_range', '')
+        
         # Path to your template file
-        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        template_path = os.path.join(settings.BASE_DIR, 'PTLTApp', 'templates', 'attendance_template.docx')
         
         # Load the template
         doc = DocxTemplate(template_path)
         
-        # Get class schedule data
-        class_schedule = get_object_or_404(ClassSchedule, id=class_id)
+        # Prepare base context for class details
+        context = {
+            'subject': classschedule.course_title,
+            'faculty_name': f"{classschedule.professor.firstname} {classschedule.professor.lastname}" if classschedule.professor else "TBA",
+            'course': classschedule.course_section.course_name if classschedule.course_section else "",
+            'room_assignment': classschedule.room_assignment or "TBA",
+            'year_section': classschedule.course_section.course_section if classschedule.course_section else "",
+            'schedule': f"{classschedule.days} {classschedule.time_in}-{classschedule.time_out}",
+        }
+        
+        # Handle dates
+        dates = []
+        if date_range:
+            try:
+                start_str, end_str = date_range.split('_to_')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+                
+                # Get attendance dates within range (max 8)
+                attendance_dates = AttendanceRecord.objects.filter(
+                    class_schedule_id=class_id,
+                    date__range=[start_date, end_date]
+                ).values_list('date', flat=True).distinct().order_by('date')
+                
+                dates = list(attendance_dates)[:8]  # Limit to 8 dates
+                
+            except (ValueError, TypeError):
+                # If date parsing fails, use default
+                pass
+        
+        # If no valid date range, generate default 8 dates starting from today
+        if not dates:
+            base_date = date.today()
+            for i in range(8):
+                new_date = base_date + timedelta(days=i)
+                dates.append(new_date)
+        
+        # Add dates to context (date1 to date8)
+        for i in range(1, 9):
+            if i <= len(dates):
+                context[f'date{i}'] = dates[i-1].strftime('%m/%d')
+            else:
+                context[f'date{i}'] = ''
         
         # Get students for this class
         students = Account.objects.filter(
-            course_section=class_schedule.course_section, 
+            course_section=classschedule.course_section,
             role='Student'
         ).order_by('last_name', 'first_name')
         
-        # Generate dates
-        dates = []
-        base_date = date.today()
-        for i in range(8):
-            new_date = base_date + timedelta(days=i*2)
-            dates.append(new_date.strftime("%m/%d"))
-        
-        context = {
-            'subject': class_schedule.course_title,
-            'faculty_name': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else '',
-            'course': class_schedule.course_section.course_name if class_schedule.course_section else '',
-            'room_assignment': class_schedule.room_assignment,
-            'year_section': class_schedule.course_section.course_section if class_schedule.course_section else '',
-            'schedule': f"{class_schedule.days} {class_schedule.time_in}-{class_schedule.time_out}",
-            'date1': dates[0],
-            'date2': dates[1],
-            'date3': dates[2],
-            'date4': dates[3],
-            'date5': dates[4],
-            'date6': dates[5],
-            'date7': dates[6],
-            'date8': dates[7],
-        }
-
-        # Add individual student data for up to 40 students
-        for i, student in enumerate(students[:40]):  # Limit to first 40 students
-            context[f'student{i+1}_name'] = f"{student.last_name}, {student.first_name}"
-            context[f'student{i+1}_sex'] = student.sex
+        # Get attendance records if we have dates
+        attendance_data = defaultdict(lambda: defaultdict(dict))
+        if date_range and dates:
+            attendance_qs = AttendanceRecord.objects.filter(
+                class_schedule_id=class_id,
+                date__in=dates
+            ).select_related('student')
             
-            # Add empty time slots for now
-            for j in range(1, 9):
-                context[f'student{i+1}_time{j}'] = ''
-
-        # Fill remaining slots with empty strings if fewer than 40 students
-        for i in range(len(students), 40):
-            context[f'student{i+1}_name'] = ''
-            context[f'student{i+1}_sex'] = ''
-            for j in range(1, 9):
-                context[f'student{i+1}_time{j}'] = ''                    
+            for record in attendance_qs:
+                attendance_data[record.student.id][record.date] = {
+                    'time_in': record.time_in,
+                    'time_out': record.time_out,
+                    'status': record.status
+                }
         
-        # Render the template
+        # Add individual student data (student1_name to student40_name, etc.)
+        for i, student in enumerate(students[:40], 1):  # Limit to first 40 students
+            context[f'student{i}_name'] = f"{student.last_name}, {student.first_name}"
+            context[f'student{i}_sex'] = student.sex if student.sex else ''
+            
+            # Add attendance times for each date (time1 to time8)
+            for j in range(1, 9):
+                if j <= len(dates):
+                    date_obj = dates[j-1]
+                    attendance_info = attendance_data.get(student.id, {}).get(date_obj, {})
+                    
+                    time_in = attendance_info.get('time_in')
+                    time_out = attendance_info.get('time_out')
+                    
+                    if time_in and time_out:
+                        # Format as HH:MM - HH:MM
+                        time_str = f"{time_in.strftime('%H:%M')} - {time_out.strftime('%H:%M')}"
+                    else:
+                        time_str = ''
+                else:
+                    time_str = ''
+                
+                context[f'student{i}_time{j}'] = time_str
+        
+        # Fill remaining slots with empty strings if fewer than 40 students
+        for i in range(len(students) + 1, 41):
+            context[f'student{i}_name'] = ''
+            context[f'student{i}_sex'] = ''
+            for j in range(1, 9):
+                context[f'student{i}_time{j}'] = ''
+        
+        # Render the template with context
         doc.render(context)
         
         # Save to memory
@@ -1954,12 +2005,14 @@ def generate_attendance_docx_view(request, class_id):
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         
-        filename = f"Attendance_{class_schedule.course_code}_{base_date.strftime('%Y%m%d')}.docx"
+        # Set filename
+        filename = f"Attendance_{classschedule.course_code}_{date.today().strftime('%Y%m%d')}.docx"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
         return response
         
     except Exception as e:
+        print(f"Error generating document: {str(e)}")  # Debug
         return HttpResponse(f"Error generating document: {str(e)}", status=500)
     
 @api_view(['POST'])
