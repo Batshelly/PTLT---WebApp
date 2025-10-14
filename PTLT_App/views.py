@@ -1954,7 +1954,6 @@ def mobile_login(request):
 
 # For docx file generation
 @instructor_or_admin_required
-@xframe_options_exempt  # Allow iframe preview
 def generate_attendance_pdf_view(request, class_id):
     """Generate PDF attendance form matching DOCX template"""
     try:
