@@ -1973,7 +1973,7 @@ def generate_attendance_docx_view(request, class_id):
             'subject': class_schedule.course_title or class_schedule.course_code,
             'faculty_name': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",  # ✅ FIXED: first_name not firstname
             'course': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            'room': class_schedule.room_assignment or "TBA",
+            'room': class_schedule.room_assignment or "Room TBA",
             'year_section': class_schedule.course_section.course_section if class_schedule.course_section else "",
             'schedule': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
             'students': []
@@ -2303,7 +2303,7 @@ def generate_attendance_pdf_view(request, class_id):
             ['SUBJECT', class_schedule.course_title or class_schedule.course_code, 
              'FACULTY IN-CHARGE', f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA"],
             ['COURSE', class_schedule.course_section.course_name if class_schedule.course_section else "",
-             'BLDG. & ROOM NO.', class_schedule.room_assignment or "TBA"],
+             'BLDG. & ROOM NO.', class_schedule.room_assignment or "Room TBA"],
             ['YEAR & SECTION', class_schedule.course_section.course_section if class_schedule.course_section else "",
              'SCHEDULE', f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"],
         ]

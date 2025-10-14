@@ -123,18 +123,27 @@ function clearTable() {
 }
 
 function previewDocxFile() {
-    if (!selectedClassId) { alert('Select a class first!'); return; }
+    if (!selectedClassId) { 
+        alert('Please select a class first!'); 
+        return; 
+    }
+    
     const modal = new bootstrap.Modal(document.getElementById('previewModal'));
     modal.show();
+    
     document.getElementById('loadingSpinner').style.display = 'block';
     document.getElementById('docPreviewFrame').style.display = 'none';
     
+    // ✅ USE PDF URL (not Office viewer)
     let pdfUrl = `/attendance/pdf/${selectedClassId}/`;
-    if (selectedDateRange) pdfUrl += `?date_range=${selectedDateRange}`;
+    if (selectedDateRange) {
+        pdfUrl += `?date_range=${selectedDateRange}`;
+    }
     
     const iframe = document.getElementById('docPreviewFrame');
-    iframe.src = pdfUrl;
-    iframe.onload = () => {
+    iframe.src = pdfUrl;  // ✅ Direct PDF - no Office viewer needed
+    
+    iframe.onload = function() {
         document.getElementById('loadingSpinner').style.display = 'none';
         iframe.style.display = 'block';
     };
