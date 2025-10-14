@@ -77,6 +77,7 @@ from django.core.mail import EmailMessage
 from django.conf import settings
 import random
 from datetime import datetime, timedelta, date
+from .models import Account, CourseSection, ClassSchedule
 
 # Custom authentication decorators
 def admin_required(view_func):
@@ -1026,16 +1027,18 @@ def import_class_schedule(request):
             'errors': ['Only POST method allowed']
         }, status=405)
     
+    # ✅ FIXED: Changed 'csvfile' to 'csv_file'
     if 'csv_file' not in request.FILES:
         return JsonResponse({
             'status': 'error',
             'message': 'No CSV file uploaded',
             'imported': 0,
             'skipped': 0,
-            'errors': ['No CSV file found in request']
+            'errors': [f'No CSV file found. Received files: {list(request.FILES.keys())}']
         }, status=400)
     
     try:
+        # ✅ FIXED: Changed to 'csv_file'
         csv_file = request.FILES['csv_file']
         print(f"Processing file: {csv_file.name}, size: {csv_file.size} bytes")
         
@@ -1073,7 +1076,7 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # Get professor (matching your Account model)
+                # Get professor
                 try:
                     professor = Account.objects.get(user_id=professor_user_id, role='Instructor')
                     print(f"Found professor: {professor.first_name} {professor.last_name}")
@@ -1082,7 +1085,7 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # Get course section (matching your CourseSection model)
+                # Get course section
                 try:
                     course_section = CourseSection.objects.get(id=int(course_section_id))
                     print(f"Found course section: {course_section.course_section}")
@@ -1091,7 +1094,7 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 except ValueError:
-                    results['errors'].append(f"Line {line_num}: Invalid course_section_id '{course_section_id}' (must be a number)")
+                    results['errors'].append(f"Line {line_num}: Invalid course_section_id '{course_section_id}'")
                     results['skipped'] += 1
                     continue
                 
@@ -1100,16 +1103,16 @@ def import_class_schedule(request):
                     time_in = datetime.strptime(time_in_str, '%H:%M').time()
                     time_out = datetime.strptime(time_out_str, '%H:%M').time()
                 except ValueError:
-                    results['errors'].append(f"Line {line_num}: Invalid time format (use HH:MM, e.g., 09:30)")
+                    results['errors'].append(f"Line {line_num}: Invalid time format (use HH:MM)")
                     results['skipped'] += 1
                     continue
                 
-                # Create or update class schedule (matching your ClassSchedule model)
+                # Create or update class schedule
                 class_schedule, created = ClassSchedule.objects.update_or_create(
                     course_code=course_code,
                     course_section=course_section,
                     defaults={
-                        'course_title': course_title or course_code,  # Use course_code if title is empty
+                        'course_title': course_title or course_code,
                         'professor': professor,
                         'time_in': time_in,
                         'time_out': time_out,
@@ -1135,14 +1138,14 @@ def import_class_schedule(request):
         
         # Determine status
         if results['imported'] == 0 and results['skipped'] > 0:
-            status = 'failed'
+            status_code = 'failed'
         elif results['skipped'] > 0:
-            status = 'partial'
+            status_code = 'partial'
         else:
-            status = 'ok'
+            status_code = 'ok'
         
         response_data = {
-            'status': status,
+            'status': status_code,
             'imported': results['imported'],
             'skipped': results['skipped'],
             'errors': results['errors'][:10]  # Limit to first 10 errors
@@ -1164,6 +1167,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {error_message}']
         }, status=500)
+
 #try pdf import
 
 @require_http_methods(["POST"])
