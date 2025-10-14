@@ -1011,7 +1011,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Account, ClassSchedule, CourseSection
 
 @csrf_exempt
-@admin_required
+@instructor_or_admin_required
 def import_class_schedule(request):
     """Import class schedules from CSV file"""
     
