@@ -32,7 +32,6 @@ urlpatterns = [
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
     path('attendance/pdf/<int:class_id>/', views.generate_attendance_pdf_view, name='generate_attendance_pdf'),
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
-]
     
     
 
