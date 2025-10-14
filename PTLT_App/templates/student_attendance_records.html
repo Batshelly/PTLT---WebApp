@@ -84,9 +84,9 @@
                 {% endif %}
             </div>
 
-            <!-- 🔥 CSV Import Button -->
-            <div class="d-flex align-items-center d-print-none me-2">
-                <button class="custom-btn" data-bs-toggle="modal" data-bs-target="#csvImportModal">
+            <!-- CSV Import Button -->
+            <div class="d-flex align-items-center d-print-none">
+                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
                     <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
                 </button>
             </div>
@@ -235,12 +235,12 @@
 </div>
 
 <!-- Document Preview Modal -->
-<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+<div class="modal fade" id="previewModal" tabindex="-1">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="previewModalLabel">Document Preview</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">Document Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0">
                 <div id="loadingSpinner" class="text-center p-5">
@@ -259,13 +259,13 @@
     </div>
 </div>
 
-<!-- 🔥 CSV Import Modal -->
-<div class="modal fade" id="csvImportModal" tabindex="-1" aria-labelledby="csvImportModalLabel" aria-hidden="true">
+<!-- CSV Import Modal -->
+<div class="modal fade" id="csvImportModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title" id="csvImportModalLabel">📁 Import Class Schedules from CSV</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">📁 Import Class Schedules from CSV</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="csvUploadForm" enctype="multipart/form-data">
@@ -274,17 +274,14 @@
                         <label for="csvFile" class="form-label fw-bold">Select CSV File</label>
                         <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
                         <div class="form-text mt-2">
-                            <strong>Required CSV columns:</strong><br>
+                            <strong>Required columns:</strong><br>
                             <code>professor_user_id, course_title, course_code, course_section_id, time_in, time_out, days, grace_period, student_count, remote_device, room_assignment</code>
                         </div>
                     </div>
                     
-                    <!-- Sample CSV Format -->
                     <div class="alert alert-info">
-                        <strong>📋 Sample CSV Format:</strong>
-                        <pre class="mb-0 mt-2">professor_user_id,course_title,course_code,course_section_id,time_in,time_out,days,grace_period,student_count,remote_device,room_assignment
-000001,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101
-000002,Database Systems,CSIT202,2,10:20,11:10,TTH,15,25,Device2,Room 102</pre>
+                        <strong>📋 Sample Format:</strong>
+                        <pre class="mb-0 mt-2">000001,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
                     </div>
 
                     <button type="submit" class="btn btn-success w-100">
@@ -292,59 +289,164 @@
                     </button>
                 </form>
                 
-                <!-- Results Display -->
                 <div id="uploadResults" class="mt-3" style="display: none;">
                     <div class="alert" role="alert">
                         <h6 class="fw-bold">Import Results:</h6>
-                        <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount" class="text-success">0</span></p>
-                        <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount" class="text-warning">0</span></p>
+                        <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount">0</span></p>
+                        <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount">0</span></p>
                         <div id="errorsList"></div>
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 🔥 Link to External JavaScript File -->
+<!-- ALL JAVASCRIPT INLINE -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="{% static 'js/student_attendance_records.js' %}"></script>
-
-<!-- 🔥 CSV Upload JavaScript -->
 <script>
+// Date Range and Subject Selection
+document.addEventListener("DOMContentLoaded", function () {
+    const subjectSelect = document.getElementById("subject");
+    const dateSelect = document.getElementById("date-range");
+    const thCells = document.querySelectorAll(".date-th");
+    let submitTimeout;
+
+    if (subjectSelect) {
+        subjectSelect.addEventListener("change", function () {
+            if (submitTimeout) clearTimeout(submitTimeout);
+            if (this.value) {
+                submitTimeout = setTimeout(() => {
+                    document.getElementById("scheduleForm").submit();
+                }, 100);
+            }
+        });
+    }
+
+    if (dateSelect) {
+        dateSelect.addEventListener("change", function () {
+            if (this.value) {
+                document.getElementById("dateForm").submit();
+            }
+        });
+    }
+});
+
+// Preview Document Function
+function previewDocument() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedClassId = urlParams.get('schedule');
+    const dateRange = urlParams.get('date_range');
+    
+    if (!selectedClassId) {
+        alert('Please select a class first!');
+        return;
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+    modal.show();
+
+    document.getElementById('loadingSpinner').style.display = 'block';
+    document.getElementById('docPreviewFrame').style.display = 'none';
+
+    let docUrl = `${window.location.origin}/attendance/docx/${selectedClassId}/`;
+    if (dateRange) {
+        docUrl += `?date_range=${dateRange}`;
+    }
+
+    const encodedUrl = encodeURIComponent(docUrl);
+    const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+    
+    const iframe = document.getElementById('docPreviewFrame');
+    iframe.src = viewerUrl;
+    
+    iframe.onload = function() {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        iframe.style.display = 'block';
+    };
+}
+
+// Download DOCX Function
+function downloadDocx() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedClassId = urlParams.get('schedule');
+    const dateRange = urlParams.get('date_range');
+    
+    if (!selectedClassId) {
+        alert('Please select a class first!');
+        return;
+    }
+
+    let downloadUrl = `/attendance/docx/${selectedClassId}/`;
+    if (dateRange) {
+        downloadUrl += `?date_range=${dateRange}`;
+    }
+    
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Export to PDF Function
+function exportToPDF() {
+    const element = document.getElementById('attendance-doc');
+    const opt = {
+        margin:       0.5,
+        filename:     'Class_Attendance_Form.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all'] }
+    };
+    html2pdf().set(opt).from(element).save();
+}
+
+// CSV Upload Function
 document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
-    const formData = new FormData();
     const csvFile = document.getElementById('csvFile').files[0];
-    
     if (!csvFile) {
         alert('Please select a CSV file');
         return;
     }
     
+    console.log('Uploading:', csvFile.name);
+    
+    const formData = new FormData();
     formData.append('csv_file', csvFile);
     
-    // Show loading
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
     const resultsDiv = document.getElementById('uploadResults');
     resultsDiv.style.display = 'block';
     resultsDiv.querySelector('.alert').className = 'alert alert-info';
     resultsDiv.querySelector('.alert h6').textContent = '⏳ Uploading...';
     
-    // Send to server
     fetch('/import_class_schedule/', {
         method: 'POST',
         body: formData,
         headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-        }
+            'X-CSRFToken': csrfToken,
+        },
+        credentials: 'same-origin'
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Status:', response.status);
+        if (!response.ok) {
+            return response.text().then(text => {
+                console.error('Error response:', text);
+                throw new Error(`HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
-        // Update results
+        console.log('Success:', data);
+        
         document.getElementById('importedCount').textContent = data.imported || 0;
         document.getElementById('skippedCount').textContent = data.skipped || 0;
         
@@ -352,33 +454,28 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
         errorsList.innerHTML = '';
         
         if (data.errors && data.errors.length > 0) {
-            errorsList.innerHTML = '<strong class="text-danger">❌ Errors:</strong><ul class="mb-0 mt-1">';
+            errorsList.innerHTML = '<strong class="text-danger">Errors:</strong><ul>';
             data.errors.forEach(err => {
-                errorsList.innerHTML += `<li class="text-danger">${err}</li>`;
+                errorsList.innerHTML += `<li>${err}</li>`;
             });
             errorsList.innerHTML += '</ul>';
         }
         
-        // Set alert color based on status
         const alertDiv = resultsDiv.querySelector('.alert');
         if (data.status === 'ok') {
             alertDiv.className = 'alert alert-success';
-            resultsDiv.querySelector('.alert h6').textContent = '✅ Import Successful!';
+            resultsDiv.querySelector('.alert h6').textContent = '✅ Success!';
         } else if (data.status === 'partial') {
             alertDiv.className = 'alert alert-warning';
-            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial Import';
+            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial';
         } else {
             alertDiv.className = 'alert alert-danger';
-            resultsDiv.querySelector('.alert h6').textContent = '❌ Import Failed';
+            resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
         }
         
-        // Reset form if successful
         if (data.imported > 0) {
             document.getElementById('csvUploadForm').reset();
-            // Reload page after 2 seconds to show new classes
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            setTimeout(() => location.reload(), 2000);
         }
     })
     .catch(error => {
@@ -387,7 +484,7 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
         resultsDiv.style.display = 'block';
         resultsDiv.querySelector('.alert').className = 'alert alert-danger';
         resultsDiv.querySelector('.alert h6').textContent = '❌ Upload Failed';
-        resultsDiv.querySelector('.alert').innerHTML += '<p>Network error. Please try again.</p>';
+        resultsDiv.querySelector('.alert').innerHTML += `<p>${error.message}</p>`;
     });
 });
 </script>
