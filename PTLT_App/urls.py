@@ -29,8 +29,7 @@ urlpatterns = [
     path('import_class_pdf/', views.import_class_from_pdf, name='import_class_pdf'),
     path('api/trigger-mobile-sync/', views.trigger_mobile_sync, name='trigger_mobile_sync'),
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
-    path('attendance/docx/<int:schedule_id>/', download_attendance_docx, name='attendance_docx'),
-    path('attendance/pdf/<int:schedule_id>/', download_attendance_pdf, name='attendance_pdf'),
+    
 
 
 ]
