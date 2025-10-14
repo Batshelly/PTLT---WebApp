@@ -147,7 +147,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 EMAIL_BACKEND = 'PTLT.email_backend.ResendEmailBackend'
 DEFAULT_FROM_EMAIL = 'noreply@tupc-ptlt.online'
 
-REST_FRAMEWORK = {
+REST_FRAMEWORK = { 
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
