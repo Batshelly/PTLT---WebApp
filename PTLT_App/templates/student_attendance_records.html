@@ -74,8 +74,9 @@
                     {% endif %}
                 </div>
             </div>
-            <div>
+            <div class="mb-3">
                 {% if selected_schedule_id %}
+                <button class="btn btn-sm btn-primary me-2" onclick="previewDocument()">Preview Document</button>
                 <button class="btn btn-sm btn-success me-2" onclick="downloadDocx()">Download DOCX</button>
                 {% endif %}
             </div>
@@ -215,7 +216,25 @@
         </div>
     </div>
 
-<!-- Rest of your JavaScript remains the same -->
+<!-- Document Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewModalLabel">Document Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <iframe id="docPreviewFrame" style="width:100%; height:100%; border:none;"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-success" onclick="downloadDocx()">Download DOCX</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const subjectSelect = document.getElementById("subject");
@@ -278,6 +297,64 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+<script>
+    function previewDocument() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const selectedClassId = urlParams.get('schedule');
+        const dateRange = urlParams.get('date_range');
+        
+        if (!selectedClassId) {
+            alert('Please select a class first!');
+            return;
+        }
+
+        // Build the document URL with parameters
+        let docUrl = `${window.location.origin}/attendance/docx/${selectedClassId}/`;
+        if (dateRange) {
+            docUrl += `?date_range=${dateRange}`;
+        }
+
+        // Encode the URL for the viewer
+        const encodedUrl = encodeURIComponent(docUrl);
+        
+        // Option 1: Microsoft Office Web Viewer (better for DOCX)
+        const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+        
+        // Option 2: Google Docs Viewer (alternative)
+        // const viewerUrl = `https://docs.google.com/viewer?url=${encodedUrl}&embedded=true`;
+        
+        // Set the iframe source
+        document.getElementById('docPreviewFrame').src = viewerUrl;
+        
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+        modal.show();
+    }
+
+    function downloadDocx() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const selectedClassId = urlParams.get('schedule');
+        const dateRange = urlParams.get('date_range');
+        
+        if (!selectedClassId) {
+            alert('Please select a class first!');
+            return;
+        }
+
+        let downloadUrl = `/attendance/docx/${selectedClassId}/`;
+        if (dateRange) {
+            downloadUrl += `?date_range=${dateRange}`;
+        }
+        
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
     function exportToPDF() {
@@ -291,24 +368,6 @@ document.addEventListener("DOMContentLoaded", function () {
             pagebreak:    { mode: ['avoid-all'] }
         };
         html2pdf().set(opt).from(element).save();
-    }
-
-    function downloadDocx() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const selectedClassId = urlParams.get('schedule');
-        
-        if (!selectedClassId) {
-            alert('Please select a class first!');
-            return;
-        }
-
-        const downloadUrl = `/attendance/docx/${selectedClassId}/`;
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     }
 </script>
 
