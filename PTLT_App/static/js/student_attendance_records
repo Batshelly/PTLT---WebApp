@@ -9,7 +9,11 @@ function initEmptyTable() {
     }
     document.getElementById('attendanceTableBody').innerHTML = html;
 }
-initEmptyTable();
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initEmptyTable();
+});
 
 // Subject change
 document.getElementById('subjectSelect').addEventListener('change', function() {
@@ -49,7 +53,7 @@ document.getElementById('subjectSelect').addEventListener('change', function() {
             document.getElementById('previewBtn').disabled = false;
             document.getElementById('downloadBtn').disabled = false;
             
-            // Show message if no records
+            // Show/hide no records message
             if (data.date_ranges.length === 0) {
                 document.getElementById('noRecordsMsg').style.display = 'block';
             } else {
@@ -101,7 +105,7 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
             
             document.getElementById('attendanceTableBody').innerHTML = tableHtml;
             
-            // Show count
+            // Show student count
             if (data.student_count > 0) {
                 document.getElementById('studentCount').innerHTML = `<small class="text-muted">Showing ${data.student_count} students</small>`;
                 document.getElementById('studentCount').style.display = 'block';
@@ -109,6 +113,7 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
         });
 });
 
+// Clear table
 function clearTable() {
     document.getElementById('classSubject').textContent = '[Subject]';
     document.getElementById('classFaculty').textContent = '[Faculty]';
@@ -122,6 +127,7 @@ function clearTable() {
     document.getElementById('studentCount').style.display = 'none';
 }
 
+// Preview PDF
 function previewDocxFile() {
     if (!selectedClassId) { 
         alert('Please select a class first!'); 
@@ -134,14 +140,14 @@ function previewDocxFile() {
     document.getElementById('loadingSpinner').style.display = 'block';
     document.getElementById('docPreviewFrame').style.display = 'none';
     
-    // ✅ USE PDF URL (not Office viewer)
+    // Use PDF URL
     let pdfUrl = `/attendance/pdf/${selectedClassId}/`;
     if (selectedDateRange) {
         pdfUrl += `?date_range=${selectedDateRange}`;
     }
     
     const iframe = document.getElementById('docPreviewFrame');
-    iframe.src = pdfUrl;  // ✅ Direct PDF - no Office viewer needed
+    iframe.src = pdfUrl;
     
     iframe.onload = function() {
         document.getElementById('loadingSpinner').style.display = 'none';
@@ -149,11 +155,86 @@ function previewDocxFile() {
     };
 }
 
+// Download DOCX
 function downloadDocx() {
-    if (!selectedClassId) { alert('Select a class first!'); return; }
+    if (!selectedClassId) { 
+        alert('Please select a class first!'); 
+        return; 
+    }
+    
     let url = `/attendance/docx/${selectedClassId}/`;
-    if (selectedDateRange) url += `?date_range=${selectedDateRange}`;
+    if (selectedDateRange) {
+        url += `?date_range=${selectedDateRange}`;
+    }
+    
     const a = document.createElement('a');
     a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
 }
+
+// CSV Upload
+document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const csvFile = document.getElementById('csvFile').files[0];
+    if (!csvFile) { 
+        alert('Please select a file'); 
+        return; 
+    }
+    
+    const formData = new FormData();
+    formData.append('csv_file', csvFile);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    const resultsDiv = document.getElementById('uploadResults');
+    resultsDiv.style.display = 'block';
+    resultsDiv.querySelector('.alert').className = 'alert alert-info';
+    resultsDiv.querySelector('.alert h6').textContent = '⏳ Uploading...';
+    
+    fetch('/import_class_schedule/', {
+        method: 'POST',
+        body: formData,
+        headers: {'X-CSRFToken': csrfToken},
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('importedCount').textContent = data.imported || 0;
+        document.getElementById('skippedCount').textContent = data.skipped || 0;
+        
+        const errorsList = document.getElementById('errorsList');
+        errorsList.innerHTML = '';
+        if (data.errors && data.errors.length > 0) {
+            errorsList.innerHTML = '<strong class="text-danger">Errors:</strong><ul>';
+            data.errors.forEach(err => { 
+                errorsList.innerHTML += `<li>${err}</li>`; 
+            });
+            errorsList.innerHTML += '</ul>';
+        }
+        
+        const alertDiv = resultsDiv.querySelector('.alert');
+        if (data.status === 'ok') {
+            alertDiv.className = 'alert alert-success';
+            resultsDiv.querySelector('.alert h6').textContent = '✅ Success!';
+        } else if (data.status === 'partial') {
+            alertDiv.className = 'alert alert-warning';
+            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial';
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+        }
+        
+        if (data.imported > 0) {
+            document.getElementById('csvUploadForm').reset();
+            setTimeout(() => location.reload(), 2000);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        resultsDiv.querySelector('.alert').className = 'alert alert-danger';
+        resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+    });
+});
