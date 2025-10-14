@@ -1,8 +1,35 @@
-
 document.addEventListener("DOMContentLoaded", function () {
-    const select = document.getElementById("date-range");
+    const subjectSelect = document.getElementById("subject");
+    const dateSelect = document.getElementById("date-range");
     const thCells = document.querySelectorAll(".date-th");
+    
+    let submitTimeout;
 
+    // Subject selection change handler
+    if (subjectSelect) {
+        subjectSelect.addEventListener("change", function () {
+            if (submitTimeout) {
+                clearTimeout(submitTimeout);
+            }
+            
+            if (this.value) {
+                submitTimeout = setTimeout(() => {
+                    document.getElementById("scheduleForm").submit();
+                }, 100);
+            }
+        });
+    }
+
+    // Date range selection change handler
+    if (dateSelect) {
+        dateSelect.addEventListener("change", function () {
+            if (this.value) {
+                document.getElementById("dateForm").submit();
+            }
+        });
+    }
+
+    // Date formatting functions
     function formatDateMMDD(date) {
         const mm = (date.getMonth() + 1).toString().padStart(2, '0');
         const dd = date.getDate().toString().padStart(2, '0');
@@ -22,9 +49,9 @@ document.addEventListener("DOMContentLoaded", function () {
         return dates;
     }
 
-    if (select && thCells.length) {
-        select.addEventListener("change", function () {
-            const [startStr, endStr] = this.value.split("_to_");
+    function updateDateHeaders(value) {
+        if (value) {
+            const [startStr, endStr] = value.split("_to_");
             const dateArray = getDateRange(startStr, endStr);
 
             thCells.forEach((cell, index) => {
@@ -34,9 +61,86 @@ document.addEventListener("DOMContentLoaded", function () {
                     cell.textContent = "";
                 }
             });
-        });
-
-        select.dispatchEvent(new Event("change"));
+        }
     }
 });
 
+// Preview document function (must be global)
+function previewDocument() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedClassId = urlParams.get('schedule');
+    const dateRange = urlParams.get('date_range');
+    
+    if (!selectedClassId) {
+        alert('Please select a class first!');
+        return;
+    }
+
+    // Show the modal first
+    const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+    modal.show();
+
+    // Show loading spinner
+    document.getElementById('loadingSpinner').style.display = 'block';
+    document.getElementById('docPreviewFrame').style.display = 'none';
+
+    // Build the document URL with parameters
+    let docUrl = `${window.location.origin}/attendance/docx/${selectedClassId}/`;
+    if (dateRange) {
+        docUrl += `?date_range=${dateRange}`;
+    }
+
+    // Encode the URL for the viewer
+    const encodedUrl = encodeURIComponent(docUrl);
+    
+    // Microsoft Office Web Viewer
+    const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+    
+    // Set the iframe source
+    const iframe = document.getElementById('docPreviewFrame');
+    iframe.src = viewerUrl;
+    
+    // Hide spinner when iframe loads
+    iframe.onload = function() {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        iframe.style.display = 'block';
+    };
+}
+
+// Download DOCX function (must be global)
+function downloadDocx() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedClassId = urlParams.get('schedule');
+    const dateRange = urlParams.get('date_range');
+    
+    if (!selectedClassId) {
+        alert('Please select a class first!');
+        return;
+    }
+
+    let downloadUrl = `/attendance/docx/${selectedClassId}/`;
+    if (dateRange) {
+        downloadUrl += `?date_range=${dateRange}`;
+    }
+    
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Export to PDF function (must be global)
+function exportToPDF() {
+    const element = document.getElementById('attendance-doc');
+    const opt = {
+        margin:       0.5,
+        filename:     'Class_Attendance_Form.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all'] }
+    };
+    html2pdf().set(opt).from(element).save();
+}

@@ -39,7 +39,9 @@
             <div class="d-flex align-items-center nav_links d-print-none">
                 <strong class="pe-3 me-3 fs-5 ptlt no-print">Document Plotter</strong>
             </div>
-        <div class="d-flex align-items-center d-print-none">
+            
+            <!-- Subject Selection -->
+            <div class="d-flex align-items-center d-print-none">
                 <form method="GET" action="{% url 'attendance_report_template' %}" id="scheduleForm">
                     {% if selected_date_range %}
                         <input type="hidden" name="date_range" value="{{ selected_date_range }}">
@@ -53,26 +55,186 @@
                         {% endfor %}
                     </select>
                 </form>
-        </div>
+            </div>
+
+            <!-- Date Range Selection -->
+            <div class="d-flex align-items-center d-print-none">
+                <form method="GET" action="{% url 'attendance_report_template' %}" id="dateForm">
+                    {% if selected_schedule_id %}
+                        <input type="hidden" name="schedule" value="{{ selected_schedule_id }}">
+                    {% endif %}
+                    <select id="date-range" class="form-select" name="date_range" {% if not date_ranges %}disabled{% endif %}>
+                        <option value="">-- Select Date Range --</option>
+                        {% for dr in date_ranges %}
+                            <option value="{{ dr.value }}" {% if dr.value == selected_date_range %}selected{% endif %}>{{ dr.label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
         
-        <!-- 🔥 PREVIEW SECTION STARTS HERE -->
-        <div class="d-flex align-items-center d-print-none">
-            {% if selected_schedule_id %}
-            <button class="btn btn-sm btn-primary me-2" onclick="previewDocument()">
-                <i class="bi bi-eye"></i> Preview Document
-            </button>
-            <button class="btn btn-sm btn-success" onclick="downloadDocx()">
-                <i class="bi bi-download"></i> Download DOCX
-            </button>
+            <!-- Preview & Download Buttons -->
+            <div class="d-flex align-items-center d-print-none">
+                {% if selected_schedule_id %}
+                <button class="btn btn-sm btn-primary me-2" onclick="previewDocument()">
+                    <i class="bi bi-eye"></i> Preview Document
+                </button>
+                <button class="btn btn-sm btn-success" onclick="downloadDocx()">
+                    <i class="bi bi-download"></i> Download DOCX
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- 🔥 CSV Import Button -->
+            <div class="d-flex align-items-center d-print-none">
+                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- No Records Message -->
+        <div class="col-md-4 d-flex align-items-end">
+            {% if selected_schedule_id and not date_ranges %}
+                <small class="text-muted">No attendance records found for this course</small>
             {% endif %}
         </div>
-        <!-- 🔥 PREVIEW SECTION ENDS HERE -->
 
+        <!-- Attendance Document Preview -->
+        <div id="attendance-doc" class="p-1">
+            <!-- Header -->
+            <table class="table table-bordered border-dark w-100 align-middle">
+                <tr>
+                    <td class="text-center align-middle" style="width: 120px;">
+                        <div class="logo-box">LOGO</div>
+                    </td>
+                    <td class="text-center align-middle" colspan="2">
+                        <strong>TECHNOLOGICAL UNIVERSITY OF THE PHILIPPINES</strong><br>
+                        <strong>CAVITE CAMPUS</strong><br>
+                        Carlos Q. Trinidad Avenue, Salawag, Dasmariñas City, Cavite, Philippines<br>
+                        Telefax: (046) 416-4920 <br> Email: <a href="mailto:cavite@tup.edu.ph">cavite@tup.edu.ph</a> | Website: <a href="https://www.tup.edu.ph">www.tup.edu.ph</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-center align-middle"><strong>DEPARTMENT</strong></td>
+                    <td class="text-center align-middle">
+                        <strong>CLASS ATTENDANCE MONITORING FORM</strong>
+                    </td>
+                    <td class="text-center align-middle" style="width: 100px;">
+                        <small>Page 1/1</small>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Class Details -->
+            <table class="table table-bordered border-dark mb-3">
+                <tbody>
+                    <tr class="table-dark text-white">
+                        <td colspan="4" class="fw-bold">DETAILS OF CLASS</td>
+                    </tr>
+                    <tr>
+                        <td><strong>SUBJECT</strong></td>
+                        <td>{{ attendance_data.subject|default:"[Subject]" }}</td>
+                        <td><strong>FACULTY IN-CHARGE</strong></td>
+                        <td>{{ attendance_data.faculty_name|default:"[Faculty Name]" }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>COURSE</strong></td>
+                        <td>{{ attendance_data.course|default:"[Course]" }}</td>
+                        <td><strong>BLDG. & ROOM NO.</strong></td>
+                        <td>{{ attendance_data.room|default:"[Room]" }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>YEAR & SECTION</strong></td>
+                        <td>{{ attendance_data.year_section|default:"[Section]" }}</td>
+                        <td><strong>SCHEDULE (DAY & TIME)</strong></td>
+                        <td>{{ attendance_data.schedule|default:"[Schedule]" }}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Attendance Table -->
+            <div class="table-responsive">
+                <table class="table table-bordered border-dark attendance-table">
+                    <thead class="table-secondary text-dark">
+                        <tr>
+                            <th rowspan="3">No.</th>
+                            <th rowspan="3">Name</th>
+                            <th rowspan="3">Sex (M/F)</th>
+                            <th colspan="8">Status</th>
+                        </tr>
+                        <tr>
+                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
+                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
+                        </tr>
+                        <tr class="bg-white">
+                            {% for date in date_headers %}
+                                <th class="date-th">{{ date|date:"m/d" }}</th>
+                            {% endfor %}
+                            {% for i in num_empty_date_columns %}
+                                <th class="date-th"></th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in attendance_table %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>{{ row.name }}</td>
+                            <td>{{ row.sex }}</td>
+                            {% for attendance in row.dates %}
+                            <td>
+                                {% if attendance.time_in and attendance.time_out %}
+                                    {% if attendance.time_in|time:"H:i" == "00:00" or attendance.time_out|time:"H:i" == "00:00" %}
+                                        Absent
+                                    {% else %}
+                                        {{ attendance.time_in|time:"H:i" }} - {{ attendance.time_out|time:"H:i" }}
+                                    {% endif %}
+                                {% elif attendance.status %}
+                                    {{ attendance.status }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        
+                        <!-- Generate empty rows to fill up to 40 total -->
+                        {% with attendance_table|length as student_count %}
+                            {% with "0123456789012345678901234567890123456789"|make_list as numbers %}
+                                {% for num in numbers %}
+                                    {% if forloop.counter0|add:student_count < 40 %}
+                                    <tr>
+                                        <td>{{ forloop.counter0|add:student_count|add:1 }}</td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endwith %}
+                        {% endwith %}
+                    </tbody>
+                </table>
+            </div>
         </div>
+
+        <!-- Student Count Display -->
+        {% if students_list %}
+        <div class="mt-2 mb-3 d-print-none">
+            <small class="text-muted">Showing {{ students_list|length }} students</small>
+        </div>
+        {% endif %}
+
     </div>
 </div>
 
-<!-- 🔥 Document Preview Modal -->
+<!-- Document Preview Modal -->
 <div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen">
         <div class="modal-content">
@@ -97,152 +259,137 @@
     </div>
 </div>
 
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    const subjectSelect = document.getElementById("subject");
-    const dateSelect = document.getElementById("date-range");
-    const thCells = document.querySelectorAll(".date-th");
-    
-    let submitTimeout;
+<!-- 🔥 CSV Import Modal -->
+<div class="modal fade" id="csvImportModal" tabindex="-1" aria-labelledby="csvImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="csvImportModalLabel">📁 Import Class Schedules from CSV</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="csvUploadForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="csvFile" class="form-label fw-bold">Select CSV File</label>
+                        <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
+                        <div class="form-text mt-2">
+                            <strong>Required CSV columns:</strong><br>
+                            <code>professor_user_id, course_title, course_code, course_section_id, time_in, time_out, days, grace_period, student_count, remote_device, room_assignment</code>
+                        </div>
+                    </div>
+                    
+                    <!-- Sample CSV Format -->
+                    <div class="alert alert-info">
+                        <strong>📋 Sample CSV Format:</strong>
+                        <pre class="mb-0 mt-2">professor_user_id,course_title,course_code,course_section_id,time_in,time_out,days,grace_period,student_count,remote_device,room_assignment
+000001,Web Development,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101
+000002,Database Systems,CSIT202,2,10:20,11:10,TTH,15,25,Device2,Room 102</pre>
+                    </div>
 
-    subjectSelect.addEventListener("change", function () {
-        if (submitTimeout) {
-            clearTimeout(submitTimeout);
-        }
-        
-        if (this.value) {
-            submitTimeout = setTimeout(() => {
-                document.getElementById("scheduleForm").submit();
-            }, 100);
-        }
-    });
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-upload"></i> Upload CSV
+                    </button>
+                </form>
+                
+                <!-- Results Display -->
+                <div id="uploadResults" class="mt-3" style="display: none;">
+                    <div class="alert" role="alert">
+                        <h6 class="fw-bold">Import Results:</h6>
+                        <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount" class="text-success">0</span></p>
+                        <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount" class="text-warning">0</span></p>
+                        <div id="errorsList"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
-    dateSelect.addEventListener("change", function () {
-    if (this.value) {
-        document.getElementById("dateForm").submit();
-    }
-    });
-
-    function formatDateMMDD(date) {
-        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-        const dd = date.getDate().toString().padStart(2, '0');
-        return `${mm}/${dd}`;
-    }
-
-    function getDateRange(startStr, endStr) {
-        const dates = [];
-        let current = new Date(startStr);
-        const end = new Date(endStr);
-
-        while (current <= end && dates.length < 8) {
-            dates.push(new Date(current));
-            current.setDate(current.getDate());
-        }
-
-        return dates;
-    }
-
-    function updateDateHeaders(value) {
-        if (value) {
-            const [startStr, endStr] = value.split("_to_");
-            const dateArray = getDateRange(startStr, endStr);
-
-            thCells.forEach((cell, index) => {
-                if (index < dateArray.length) {
-                    cell.textContent = formatDateMMDD(dateArray[index]);
-                } else {
-                    cell.textContent = "";
-                }
-            });
-        }
-    }
-});
-</script>
-
-<!-- 🔥 Preview and Download Functions -->
-<script>
-    function previewDocument() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const selectedClassId = urlParams.get('schedule');
-        const dateRange = urlParams.get('date_range');
-        
-        if (!selectedClassId) {
-            alert('Please select a class first!');
-            return;
-        }
-
-        // Show the modal first
-        const modal = new bootstrap.Modal(document.getElementById('previewModal'));
-        modal.show();
-
-        // Show loading spinner
-        document.getElementById('loadingSpinner').style.display = 'block';
-        document.getElementById('docPreviewFrame').style.display = 'none';
-
-        // Build the document URL with parameters
-        let docUrl = `${window.location.origin}/attendance/docx/${selectedClassId}/`;
-        if (dateRange) {
-            docUrl += `?date_range=${dateRange}`;
-        }
-
-        // Encode the URL for the viewer
-        const encodedUrl = encodeURIComponent(docUrl);
-        
-        // Option 1: Microsoft Office Web Viewer (better for DOCX)
-        const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
-        
-        // Option 2: Google Docs Viewer (alternative - uncomment to use)
-        // const viewerUrl = `https://docs.google.com/viewer?url=${encodedUrl}&embedded=true`;
-        
-        // Set the iframe source
-        const iframe = document.getElementById('docPreviewFrame');
-        iframe.src = viewerUrl;
-        
-        // Hide spinner when iframe loads
-        iframe.onload = function() {
-            document.getElementById('loadingSpinner').style.display = 'none';
-            iframe.style.display = 'block';
-        };
-    }
-
-    function downloadDocx() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const selectedClassId = urlParams.get('schedule');
-        const dateRange = urlParams.get('date_range');
-        
-        if (!selectedClassId) {
-            alert('Please select a class first!');
-            return;
-        }
-
-        let downloadUrl = `/attendance/docx/${selectedClassId}/`;
-        if (dateRange) {
-            downloadUrl += `?date_range=${dateRange}`;
-        }
-        
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-</script>
-
+<!-- 🔥 Link to External JavaScript File -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="{% static 'js/student_attendance_records.js' %}"></script>
+
+<!-- 🔥 CSV Upload JavaScript -->
 <script>
-    function exportToPDF() {
-        const element = document.getElementById('attendance-doc');
-        const opt = {
-            margin:       0.5,
-            filename:     'Class_Attendance_Form.pdf',
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2 },
-            jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
-            pagebreak:    { mode: ['avoid-all'] }
-        };
-        html2pdf().set(opt).from(element).save();
+document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    const csvFile = document.getElementById('csvFile').files[0];
+    
+    if (!csvFile) {
+        alert('Please select a CSV file');
+        return;
     }
+    
+    formData.append('csv_file', csvFile);
+    
+    // Show loading
+    const resultsDiv = document.getElementById('uploadResults');
+    resultsDiv.style.display = 'block';
+    resultsDiv.querySelector('.alert').className = 'alert alert-info';
+    resultsDiv.querySelector('.alert h6').textContent = '⏳ Uploading...';
+    
+    // Send to server
+    fetch('/import_class_schedule/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Update results
+        document.getElementById('importedCount').textContent = data.imported || 0;
+        document.getElementById('skippedCount').textContent = data.skipped || 0;
+        
+        const errorsList = document.getElementById('errorsList');
+        errorsList.innerHTML = '';
+        
+        if (data.errors && data.errors.length > 0) {
+            errorsList.innerHTML = '<strong class="text-danger">❌ Errors:</strong><ul class="mb-0 mt-1">';
+            data.errors.forEach(err => {
+                errorsList.innerHTML += `<li class="text-danger">${err}</li>`;
+            });
+            errorsList.innerHTML += '</ul>';
+        }
+        
+        // Set alert color based on status
+        const alertDiv = resultsDiv.querySelector('.alert');
+        if (data.status === 'ok') {
+            alertDiv.className = 'alert alert-success';
+            resultsDiv.querySelector('.alert h6').textContent = '✅ Import Successful!';
+        } else if (data.status === 'partial') {
+            alertDiv.className = 'alert alert-warning';
+            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial Import';
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            resultsDiv.querySelector('.alert h6').textContent = '❌ Import Failed';
+        }
+        
+        // Reset form if successful
+        if (data.imported > 0) {
+            document.getElementById('csvUploadForm').reset();
+            // Reload page after 2 seconds to show new classes
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        const resultsDiv = document.getElementById('uploadResults');
+        resultsDiv.style.display = 'block';
+        resultsDiv.querySelector('.alert').className = 'alert alert-danger';
+        resultsDiv.querySelector('.alert h6').textContent = '❌ Upload Failed';
+        resultsDiv.querySelector('.alert').innerHTML += '<p>Network error. Please try again.</p>';
+    });
+});
 </script>
 
 </body>
