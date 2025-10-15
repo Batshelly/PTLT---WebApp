@@ -79,15 +79,6 @@ import random
 from datetime import datetime, timedelta, date
 from .models import Account, CourseSection, ClassSchedule
 
-# for pdf preview
-from reportlab.lib.pagesizes import letter, legal, landscape
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from django.views.decorators.clickjacking import xframe_options_exempt
-
 # Custom authentication decorators
 def admin_required(view_func):
     @wraps(view_func)
@@ -1019,13 +1010,11 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Account, ClassSchedule, CourseSection
 
+# import csv🔥
 @csrf_exempt
 @instructor_or_admin_required
 def import_class_schedule(request):
-    """Import class schedules from CSV file"""
-    
-    print(f"Request method: {request.method}")
-    print(f"Files: {list(request.FILES.keys())}")
+    """Import class schedules AND students from CSV file"""
     
     if request.method != 'POST':
         return JsonResponse({
@@ -1036,22 +1025,17 @@ def import_class_schedule(request):
             'errors': ['Only POST method allowed']
         }, status=405)
     
-    # ✅ FIXED: Changed 'csvfile' to 'csv_file'
     if 'csv_file' not in request.FILES:
         return JsonResponse({
             'status': 'error',
             'message': 'No CSV file uploaded',
             'imported': 0,
             'skipped': 0,
-            'errors': [f'No CSV file found. Received files: {list(request.FILES.keys())}']
+            'errors': ['No CSV file found']
         }, status=400)
     
     try:
-        # ✅ FIXED: Changed to 'csv_file'
         csv_file = request.FILES['csv_file']
-        print(f"Processing file: {csv_file.name}, size: {csv_file.size} bytes")
-        
-        # Read CSV file
         decoded_file = csv_file.read().decode('utf-8')
         io_string = io.StringIO(decoded_file)
         reader = csv.DictReader(io_string)
@@ -1059,12 +1043,16 @@ def import_class_schedule(request):
         results = {
             'imported': 0,
             'skipped': 0,
-            'errors': []
+            'errors': [],
+            'students_created': 0
         }
+        
+        # Track already processed schedules to avoid duplicates
+        processed_schedules = set()
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # Get data from CSV
+                # Get class schedule data
                 professor_user_id = row.get('professor_user_id', '').strip()
                 course_title = row.get('course_title', '').strip()
                 course_code = row.get('course_code', '').strip()
@@ -1077,33 +1065,31 @@ def import_class_schedule(request):
                 remote_device = row.get('remote_device', '').strip()
                 room_assignment = row.get('room_assignment', '').strip()
                 
-                print(f"Line {line_num}: Processing {course_code}")
+                # Get student data (NEW)
+                student_id = row.get('student_id', '').strip()
+                first_name = row.get('first_name', '').strip()
+                last_name = row.get('last_name', '').strip()
+                sex = row.get('sex', '').strip()
                 
                 # Validate required fields
                 if not all([professor_user_id, course_code, course_section_id, time_in_str, time_out_str]):
-                    results['errors'].append(f"Line {line_num}: Missing required fields")
+                    results['errors'].append(f'Line {line_num}: Missing required fields')
                     results['skipped'] += 1
                     continue
                 
                 # Get professor
                 try:
                     professor = Account.objects.get(user_id=professor_user_id, role='Instructor')
-                    print(f"Found professor: {professor.first_name} {professor.last_name}")
                 except Account.DoesNotExist:
-                    results['errors'].append(f"Line {line_num}: Instructor with user_id '{professor_user_id}' not found")
+                    results['errors'].append(f'Line {line_num}: Instructor with userid {professor_user_id} not found')
                     results['skipped'] += 1
                     continue
                 
                 # Get course section
                 try:
                     course_section = CourseSection.objects.get(id=int(course_section_id))
-                    print(f"Found course section: {course_section.course_section}")
-                except CourseSection.DoesNotExist:
-                    results['errors'].append(f"Line {line_num}: CourseSection with ID '{course_section_id}' not found")
-                    results['skipped'] += 1
-                    continue
-                except ValueError:
-                    results['errors'].append(f"Line {line_num}: Invalid course_section_id '{course_section_id}'")
+                except (CourseSection.DoesNotExist, ValueError):
+                    results['errors'].append(f'Line {line_num}: CourseSection with ID {course_section_id} not found')
                     results['skipped'] += 1
                     continue
                 
@@ -1112,38 +1098,63 @@ def import_class_schedule(request):
                     time_in = datetime.strptime(time_in_str, '%H:%M').time()
                     time_out = datetime.strptime(time_out_str, '%H:%M').time()
                 except ValueError:
-                    results['errors'].append(f"Line {line_num}: Invalid time format (use HH:MM)")
+                    results['errors'].append(f'Line {line_num}: Invalid time format (use HH:MM)')
                     results['skipped'] += 1
                     continue
                 
-                # Create or update class schedule
-                class_schedule, created = ClassSchedule.objects.update_or_create(
-                    course_code=course_code,
-                    course_section=course_section,
-                    defaults={
-                        'course_title': course_title or course_code,
-                        'professor': professor,
-                        'time_in': time_in,
-                        'time_out': time_out,
-                        'days': days,
-                        'grace_period': int(grace_period) if grace_period.isdigit() else 15,
-                        'student_count': int(student_count) if student_count.isdigit() else 0,
-                        'remote_device': remote_device,
-                        'room_assignment': room_assignment,
-                    }
-                )
+                # Create or update class schedule (only once per unique schedule)
+                schedule_key = f"{course_code}_{course_section_id}"
                 
-                action = "Created" if created else "Updated"
-                results['imported'] += 1
-                print(f"{action} class schedule: {course_code}")
+                if schedule_key not in processed_schedules:
+                    class_schedule, created = ClassSchedule.objects.update_or_create(
+                        course_code=course_code,
+                        course_section=course_section,
+                        defaults={
+                            'course_title': course_title or course_code,
+                            'professor': professor,
+                            'time_in': time_in,
+                            'time_out': time_out,
+                            'days': days,
+                            'grace_period': int(grace_period) if grace_period.isdigit() else 15,
+                            'student_count': int(student_count) if student_count.isdigit() else 0,
+                            'remote_device': remote_device,
+                            'room_assignment': room_assignment,
+                        }
+                    )
+                    
+                    action = 'Created' if created else 'Updated'
+                    results['imported'] += 1
+                    processed_schedules.add(schedule_key)
+                    print(f"{action} class schedule: {course_code}")
+                
+                # Create student if student data exists (NEW)
+                if student_id and first_name and last_name:
+                    try:
+                        student, student_created = Account.objects.update_or_create(
+                            user_id=student_id,
+                            defaults={
+                                'first_name': first_name,
+                                'last_name': last_name,
+                                'sex': sex or 'M',
+                                'role': 'Student',
+                                'course_section': course_section,
+                                'email': f"{student_id}@student.tup.edu.ph",
+                                'status': 'Active'
+                            }
+                        )
+                        
+                        if student_created:
+                            results['students_created'] += 1
+                            print(f"Created student: {first_name} {last_name} ({student_id})")
+                            
+                    except Exception as e:
+                        print(f"Error creating student {student_id}: {str(e)}")
                 
             except Exception as e:
-                error_msg = f"Line {line_num}: {str(e)}"
+                error_msg = f'Line {line_num}: {str(e)}'
                 results['errors'].append(error_msg)
                 results['skipped'] += 1
                 print(f"Error: {error_msg}")
-                import traceback
-                traceback.print_exc()
         
         # Determine status
         if results['imported'] == 0 and results['skipped'] > 0:
@@ -1156,6 +1167,7 @@ def import_class_schedule(request):
         response_data = {
             'status': status_code,
             'imported': results['imported'],
+            'students_created': results['students_created'],
             'skipped': results['skipped'],
             'errors': results['errors'][:10]  # Limit to first 10 errors
         }
@@ -1168,7 +1180,6 @@ def import_class_schedule(request):
         print(f"Fatal error in CSV import: {error_message}")
         import traceback
         traceback.print_exc()
-        
         return JsonResponse({
             'status': 'error',
             'message': error_message,
@@ -1176,6 +1187,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {error_message}']
         }, status=500)
+
 
 #try pdf import
 
@@ -1953,211 +1965,6 @@ def mobile_login(request):
     
     return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-# for pdf preview
-@instructor_or_admin_required
-@xframe_options_exempt  # Allow iframe preview
-def generate_attendance_pdf_view(request, class_id):
-    """Generate PDF attendance form matching DOCX template"""
-    try:
-        class_schedule = ClassSchedule.objects.get(id=class_id)
-        date_range = request.GET.get('date_range')
-        
-        # Create PDF buffer - PORTRAIT mode to match DOCX
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer, 
-            pagesize=letter,  # Portrait like DOCX
-            rightMargin=0.5*inch, 
-            leftMargin=0.5*inch,
-            topMargin=0.5*inch, 
-            bottomMargin=0.5*inch
-        )
-        
-        elements = []
-        styles = getSampleStyleSheet()
-        
-        # Header Style
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=12,
-            textColor=colors.black,
-            spaceAfter=6,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
-        )
-        
-        # University Header
-        elements.append(Paragraph("TECHNOLOGICAL UNIVERSITY OF THE PHILIPPINES", title_style))
-        elements.append(Paragraph("CAVITE CAMPUS", title_style))
-        
-        normal_style = ParagraphStyle(
-            'Normal',
-            fontSize=8,
-            alignment=TA_CENTER
-        )
-        elements.append(Paragraph("Carlos Q. Trinidad Avenue, Salawag, Dasmariñas City, Cavite, Philippines", normal_style))
-        elements.append(Paragraph("Telefax: (046) 416-4920 | Email: cavite@tup.edu.ph | Website: www.tup.edu.ph", normal_style))
-        elements.append(Spacer(1, 0.2*inch))
-        
-        # Department and Title
-        header_data = [
-            ['DEPARTMENT', 'CLASS ATTENDANCE MONITORING FORM', 'Page 1/1']
-        ]
-        header_table = Table(header_data, colWidths=[1.5*inch, 4*inch, 1*inch])
-        header_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ]))
-        elements.append(header_table)
-        elements.append(Spacer(1, 0.15*inch))
-        
-        # Class Details
-        class_details_data = [
-            ['DETAILS OF CLASS'],
-            ['SUBJECT', class_schedule.course_title or class_schedule.course_code, 
-             'FACULTY IN-CHARGE', f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA"],
-            ['COURSE', class_schedule.course_section.course_name if class_schedule.course_section else "",
-             'BLDG. & ROOM NO.', class_schedule.room_assignment or "TBA"],
-            ['YEAR & SECTION', class_schedule.course_section.course_section if class_schedule.course_section else "",
-             'SCHEDULE', f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"],
-        ]
-        
-        class_details_table = Table(class_details_data, colWidths=[1.2*inch, 2*inch, 1.5*inch, 1.8*inch])
-        class_details_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('SPAN', (0, 0), (-1, 0)),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 1), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        
-        elements.append(class_details_table)
-        elements.append(Spacer(1, 0.2*inch))
-        
-        # Get attendance data
-        if date_range:
-            try:
-                start_str, end_str = date_range.split('_to_')
-                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            except (ValueError, AttributeError):
-                start_date = None
-                end_date = None
-        else:
-            start_date = None
-            end_date = None
-        
-        students = Account.objects.filter(
-            course_section=class_schedule.course_section,
-            role='Student'
-        ).order_by('last_name', 'first_name')
-        
-        if start_date and end_date:
-            attendance_dates = AttendanceRecord.objects.filter(
-                class_schedule=class_schedule,
-                date__range=[start_date, end_date]
-            ).values_list('date', flat=True).distinct().order_by('date')[:8]
-        else:
-            attendance_dates = AttendanceRecord.objects.filter(
-                class_schedule=class_schedule
-            ).values_list('date', flat=True).distinct().order_by('date')[:8]
-        
-        dates_list = list(attendance_dates)
-        date_headers = [d.strftime('%m/%d') for d in dates_list]
-        
-        while len(date_headers) < 8:
-            date_headers.append('')
-        
-        # Attendance Table
-        attendance_data = []
-        attendance_data.append(['No.', 'Name', 'Sex'] + ['Date'] * 8)
-        attendance_data.append(['', '', ''] + date_headers)
-        
-        # Student rows (up to 40)
-        for idx, student in enumerate(students[:40], start=1):
-            row = [
-                str(idx),
-                f"{student.last_name}, {student.first_name}",
-                student.sex or 'M'
-            ]
-            
-            for date in dates_list:
-                try:
-                    record = AttendanceRecord.objects.get(
-                        class_schedule=class_schedule,
-                        student=student,
-                        date=date
-                    )
-                    
-                    if record.time_in and record.time_out:
-                        time_in_str = record.time_in.strftime('%H:%M')
-                        time_out_str = record.time_out.strftime('%H:%M')
-                        
-                        if time_in_str == '00:00' or time_out_str == '00:00':
-                            row.append('Absent')
-                        else:
-                            row.append(f"{time_in_str}-{time_out_str}")
-                    else:
-                        row.append(record.status or '')
-                        
-                except AttendanceRecord.DoesNotExist:
-                    row.append('')
-            
-            while len(row) < 11:
-                row.append('')
-            
-            attendance_data.append(row)
-        
-        # Fill remaining rows to 40
-        for idx in range(len(students) + 1, 41):
-            attendance_data.append([str(idx), '', ''] + [''] * 8)
-        
-        # Create table with proper column widths
-        col_widths = [0.3*inch, 1.8*inch, 0.3*inch] + [0.65*inch] * 8
-        attendance_table = Table(attendance_data, colWidths=col_widths)
-        
-        table_style = [
-            ('BACKGROUND', (0, 0), (-1, 1), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (1, 2), (1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 1), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 2), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]
-        
-        attendance_table.setStyle(TableStyle(table_style))
-        elements.append(attendance_table)
-        
-        # Build PDF
-        doc.build(elements)
-        
-        buffer.seek(0)
-        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="Attendance_{class_schedule.course_code}.pdf"'
-        
-        return response
-        
-    except ClassSchedule.DoesNotExist:
-        return HttpResponse('Class schedule not found', status=404)
-    except Exception as e:
-        print(f"Error generating PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return HttpResponse(f'Error generating PDF: {str(e)}', status=500)
-
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -2369,11 +2176,12 @@ def generate_attendance_docx_view(request, class_id):
             'subject': class_schedule.course_title or class_schedule.course_code,
             'faculty_name': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
             'course': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            'room': class_schedule.room_assignment or "TBA",
+            'room_assignment': class_schedule.room_assignment or "TBA",
             'year_section': class_schedule.course_section.course_section if class_schedule.course_section else "",
             'schedule': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
             'students': []
         }
+
         
         # Get date range
         if date_range:
@@ -2469,205 +2277,6 @@ def generate_attendance_docx_view(request, class_id):
         return HttpResponse(f'Error generating document: {str(e)}', status=500)
 
 
-# PDF Generation (for preview) - KEEP ONLY ONE
-@instructor_or_admin_required
-@xframe_options_exempt
-def generate_attendance_pdf_view(request, class_id):
-    """Generate PDF attendance form - Philippine Legal Portrait (8.5 x 13)"""
-    try:
-        class_schedule = ClassSchedule.objects.get(id=class_id)
-        date_range = request.GET.get('date_range')
-        
-        # ✅ Philippine Legal Size Portrait
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer, 
-            pagesize=legal,  # 8.5 x 13 inches
-            rightMargin=0.4*inch, 
-            leftMargin=0.4*inch,
-            topMargin=0.3*inch, 
-            bottomMargin=0.3*inch
-        )
-        
-        elements = []
-        styles = getSampleStyleSheet()
-        
-        # Compact header style
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=11,
-            textColor=colors.black,
-            spaceAfter=3,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
-        )
-        
-        normal_style = ParagraphStyle(
-            'Normal',
-            fontSize=7,
-            alignment=TA_CENTER,
-            spaceAfter=2
-        )
-        
-        # University Header
-        elements.append(Paragraph("TECHNOLOGICAL UNIVERSITY OF THE PHILIPPINES", title_style))
-        elements.append(Paragraph("CAVITE CAMPUS", title_style))
-        elements.append(Paragraph("Carlos Q. Trinidad Avenue, Salawag, Dasmariñas City, Cavite, Philippines<br/>Telefax: (046) 416-4920 | Email: cavite@tup.edu.ph", normal_style))
-        elements.append(Spacer(1, 0.1*inch))
-        
-        # Title bar
-        header_data = [['DEPARTMENT', 'CLASS ATTENDANCE MONITORING FORM', 'Page 1/1']]
-        header_table = Table(header_data, colWidths=[1.3*inch, 4*inch, 0.8*inch])
-        header_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        elements.append(header_table)
-        elements.append(Spacer(1, 0.1*inch))
-        
-        # Class Details - compact
-        class_details_data = [
-            ['DETAILS OF CLASS'],
-            ['SUBJECT', class_schedule.course_title or class_schedule.course_code, 
-             'FACULTY', f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA"],
-            ['COURSE', class_schedule.course_section.course_name if class_schedule.course_section else "",
-             'ROOM', class_schedule.room_assignment or "TBA"],
-            ['YR & SEC', class_schedule.course_section.course_section if class_schedule.course_section else "",
-             'SCHEDULE', f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"],
-        ]
-        
-        class_details_table = Table(class_details_data, colWidths=[1*inch, 2*inch, 1*inch, 2.1*inch])
-        class_details_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('SPAN', (0, 0), (-1, 0)),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 1), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ]))
-        
-        elements.append(class_details_table)
-        elements.append(Spacer(1, 0.1*inch))
-        
-        # Get date range
-        if date_range:
-            try:
-                start_str, end_str = date_range.split('_to_')
-                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            except (ValueError, AttributeError):
-                start_date = None
-                end_date = None
-        else:
-            start_date = None
-            end_date = None
-        
-        students = Account.objects.filter(
-            course_section=class_schedule.course_section,
-            role='Student'
-        ).order_by('last_name', 'first_name')
-        
-        if start_date and end_date:
-            attendance_dates = AttendanceRecord.objects.filter(
-                class_schedule=class_schedule,
-                date__range=[start_date, end_date]
-            ).values_list('date', flat=True).distinct().order_by('date')[:8]
-        else:
-            attendance_dates = AttendanceRecord.objects.filter(
-                class_schedule=class_schedule
-            ).values_list('date', flat=True).distinct().order_by('date')[:8]
-        
-        dates_list = list(attendance_dates)
-        date_headers = [d.strftime('%m/%d') for d in dates_list]
-        while len(date_headers) < 8:
-            date_headers.append('')
-        
-        # Attendance Table - very compact
-        attendance_data = []
-        attendance_data.append(['No.', 'Name', 'Sex'] + date_headers)
-        
-        # Student rows (40 students)
-        for idx, student in enumerate(students[:40], start=1):
-            row = [str(idx), f"{student.last_name}, {student.first_name}", student.sex or 'M']
-            
-            for date in dates_list:
-                try:
-                    record = AttendanceRecord.objects.get(
-                        class_schedule=class_schedule,
-                        student=student,
-                        date=date
-                    )
-                    
-                    if record.time_in and record.time_out:
-                        time_in_str = record.time_in.strftime('%H:%M')
-                        time_out_str = record.time_out.strftime('%H:%M')
-                        
-                        if time_in_str == '00:00' or time_out_str == '00:00':
-                            row.append('A')
-                        else:
-                            row.append(f"{time_in_str}-{time_out_str}")
-                    else:
-                        row.append(record.status[:1] if record.status else '')
-                        
-                except AttendanceRecord.DoesNotExist:
-                    row.append('')
-            
-            while len(row) < 11:
-                row.append('')
-            
-            attendance_data.append(row)
-        
-        # Fill to 40 rows
-        for idx in range(len(students) + 1, 41):
-            attendance_data.append([str(idx), '', ''] + [''] * 8)
-        
-        # Very compact column widths for legal size
-        col_widths = [0.25*inch, 1.8*inch, 0.25*inch] + [0.6*inch] * 8
-        attendance_table = Table(attendance_data, colWidths=col_widths)
-        
-        table_style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, 0), 6),
-            ('FONTSIZE', (0, 1), (-1, -1), 5.5),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]
-        
-        attendance_table.setStyle(TableStyle(table_style))
-        elements.append(attendance_table)
-        
-        # Build PDF
-        doc.build(elements)
-        
-        buffer.seek(0)
-        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="Attendance_{class_schedule.course_code}.pdf"'
-        
-        return response
-        
-    except ClassSchedule.DoesNotExist:
-        return HttpResponse('Class schedule not found', status=404)
-    except Exception as e:
-        print(f"Error generating PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return HttpResponse(f'Error generating PDF: {str(e)}', status=500)
-    
 # for pdf preview also
 
 @instructor_or_admin_required
