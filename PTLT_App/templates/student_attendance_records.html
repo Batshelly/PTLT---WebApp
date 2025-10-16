@@ -245,17 +245,17 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
             data.attendance_table.forEach((student, idx) => {
                 tableHtml += `<tr><td>${idx+1}</td><td>${student.name}</td><td>${student.sex}</td>`;
                 student.dates.forEach(att => {
+                    // Only show time_in and time_out, leave empty if absent
                     if (att.time_in && att.time_out) {
                         tableHtml += `<td>${att.time_in} - ${att.time_out}</td>`;
-                    } else if (att.status) {
-                        tableHtml += `<td>${att.status}</td>`;
                     } else {
-                        tableHtml += `<td></td>`;
+                        tableHtml += `<td></td>`;  // Empty cell for absent
                     }
                 });
                 tableHtml += `</tr>`;
             });
             
+            // Pad remaining rows to 40
             for(let i = data.attendance_table.length; i < 40; i++) {
                 tableHtml += `<tr><td>${i+1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
             }
@@ -268,6 +268,7 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
             }
         });
 });
+
 
 function clearTable() {
     document.getElementById('classSubject').textContent = '[Subject]';
