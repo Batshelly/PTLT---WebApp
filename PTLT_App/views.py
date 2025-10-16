@@ -1014,7 +1014,7 @@ from .models import Account, ClassSchedule, CourseSection
 @csrf_exempt
 @instructor_or_admin_required
 def import_class_schedule(request):
-    """Import class schedules AND students from CSV file"""
+    """Import class schedules, create student accounts, and create attendance records"""
     
     if request.method != 'POST':
         return JsonResponse({
@@ -1044,10 +1044,9 @@ def import_class_schedule(request):
             'imported': 0,
             'skipped': 0,
             'errors': [],
-            'students_created': 0
+            'attendance_records_created': 0
         }
         
-        # Track already processed schedules to avoid duplicates
         processed_schedules = set()
         
         for line_num, row in enumerate(reader, start=2):
@@ -1065,7 +1064,7 @@ def import_class_schedule(request):
                 remote_device = row.get('remote_device', '').strip()
                 room_assignment = row.get('room_assignment', '').strip()
                 
-                # Get student data (NEW)
+                # Get student data
                 student_id = row.get('student_id', '').strip()
                 first_name = row.get('first_name', '').strip()
                 last_name = row.get('last_name', '').strip()
@@ -1073,7 +1072,7 @@ def import_class_schedule(request):
                 
                 # Validate required fields
                 if not all([professor_user_id, course_code, course_section_id, time_in_str, time_out_str]):
-                    results['errors'].append(f'Line {line_num}: Missing required fields')
+                    results['errors'].append(f'Line {line_num}: Missing required class schedule fields')
                     results['skipped'] += 1
                     continue
                 
@@ -1081,7 +1080,7 @@ def import_class_schedule(request):
                 try:
                     professor = Account.objects.get(user_id=professor_user_id, role='Instructor')
                 except Account.DoesNotExist:
-                    results['errors'].append(f'Line {line_num}: Instructor with userid {professor_user_id} not found')
+                    results['errors'].append(f'Line {line_num}: Instructor {professor_user_id} not found')
                     results['skipped'] += 1
                     continue
                 
@@ -1089,7 +1088,7 @@ def import_class_schedule(request):
                 try:
                     course_section = CourseSection.objects.get(id=int(course_section_id))
                 except (CourseSection.DoesNotExist, ValueError):
-                    results['errors'].append(f'Line {line_num}: CourseSection with ID {course_section_id} not found')
+                    results['errors'].append(f'Line {line_num}: CourseSection ID {course_section_id} not found')
                     results['skipped'] += 1
                     continue
                 
@@ -1104,6 +1103,7 @@ def import_class_schedule(request):
                 
                 # Create or update class schedule (only once per unique schedule)
                 schedule_key = f"{course_code}_{course_section_id}"
+                class_schedule = None
                 
                 if schedule_key not in processed_schedules:
                     class_schedule, created = ClassSchedule.objects.update_or_create(
@@ -1126,29 +1126,60 @@ def import_class_schedule(request):
                     results['imported'] += 1
                     processed_schedules.add(schedule_key)
                     print(f"{action} class schedule: {course_code}")
+                else:
+                    # Get existing schedule
+                    class_schedule = ClassSchedule.objects.get(
+                        course_code=course_code,
+                        course_section=course_section
+                    )
                 
-                # Create student if student data exists (NEW)
-                if student_id and first_name and last_name:
+                # ✅ SOLUTION 2: Create minimal student account + AttendanceRecord
+                if student_id and first_name and last_name and class_schedule:
                     try:
-                        student, student_created = Account.objects.update_or_create(
+                        from django.contrib.auth.hashers import make_password
+                        from datetime import date
+                        
+                        # Map sex values
+                        sex_value = 'Male' if sex.upper() == 'M' else 'Female' if sex.upper() == 'F' else 'Male'
+                        
+                        # 1. Create minimal inactive student account (for foreign key only)
+                        student_account, account_created = Account.objects.get_or_create(
                             user_id=student_id,
                             defaults={
                                 'first_name': first_name,
                                 'last_name': last_name,
-                                'sex': sex or 'M',
+                                'sex': sex_value,
                                 'role': 'Student',
                                 'course_section': course_section,
                                 'email': f"{student_id}@student.tup.edu.ph",
-                                'status': 'Active'
+                                'status': 'Inactive',  # ✅ Can't login
+                                'password': make_password(None)  # ✅ Unusable password
                             }
                         )
                         
-                        if student_created:
-                            results['students_created'] += 1
-                            print(f"Created student: {first_name} {last_name} ({student_id})")
-                            
+                        # 2. Create AttendanceRecord entry (this is what you want!)
+                        attendance_record, record_created = AttendanceRecord.objects.get_or_create(
+                            class_schedule=class_schedule,
+                            student=student_account,
+                            date=date.today(),
+                            defaults={
+                                'professor': professor,
+                                'course_section': course_section,
+                                'time_in': time(0, 0),  # ✅ Midnight placeholder
+                                'time_out': None,
+                                'fingerprint_data': b'',  # ✅ Empty bytes
+                                'status': 'Absent'  # ✅ Default status
+                            }
+                        )
+                        
+                        if record_created:
+                            results['attendance_records_created'] += 1
+                            print(f"Created attendance record for {first_name} {last_name} ({student_id})")
+                        
                     except Exception as e:
-                        print(f"Error creating student {student_id}: {str(e)}")
+                        error_msg = f"Error creating record for {student_id}: {str(e)}"
+                        results['errors'].append(error_msg)
+                        print(error_msg)
                 
             except Exception as e:
                 error_msg = f'Line {line_num}: {str(e)}'
@@ -1167,12 +1198,12 @@ def import_class_schedule(request):
         response_data = {
             'status': status_code,
             'imported': results['imported'],
-            'students_created': results['students_created'],
+            'attendance_records_created': results['attendance_records_created'],
             'skipped': results['skipped'],
             'errors': results['errors'][:10]  # Limit to first 10 errors
         }
         
-        print(f"Import complete. Returning: {response_data}")
+        print(f"Import complete. Schedules: {results['imported']}, Attendance records: {results['attendance_records_created']}")
         return JsonResponse(response_data)
         
     except Exception as e:
@@ -1188,195 +1219,6 @@ def import_class_schedule(request):
             'errors': [f'Server error: {error_message}']
         }, status=500)
 
-
-#try pdf import
-
-@require_http_methods(["POST"])
-def import_class_from_pdf(request):
-    if 'pdf_file' not in request.FILES:
-        return JsonResponse({'status': 'error', 'message': 'No PDF file provided'}, status=400)
-    
-    pdf_file = request.FILES['pdf_file']
-    
-    try:
-        # Read PDF content
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        full_text = ""
-        
-        # Extract text from all pages
-        for page in pdf_reader.pages:
-            full_text += page.extract_text() + "\n"
-        
-        # Initialize data containers
-        schedule_data = {}
-        all_students = []
-        
-        # Extract Schedule ID
-        schedule_id_match = re.search(r'Schedule ID\s*:\s*([A-Z0-9]+)', full_text)
-        if schedule_id_match:
-            schedule_data['schedule_id'] = schedule_id_match.group(1).strip()
-        
-        # Extract Subject (Course Code - Course Title)
-        subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s*Venue|\n)', full_text)
-        if subject_match:
-            schedule_data['course_code'] = subject_match.group(1).strip()
-            schedule_data['course_title'] = subject_match.group(2).strip()
-        
-        # Extract Day/Time
-        day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU])\s+(\d{1,2}:\d{2}[AP]M)-(\d{1,2}:\d{2}[AP]M)', full_text)
-        if day_time_match:
-            day_map = {
-                'M': 'Monday', 'T': 'Tuesday', 'W': 'Wednesday',
-                'R': 'Thursday', 'F': 'Friday', 'S': 'Saturday', 'U': 'Sunday'
-            }
-            schedule_data['day'] = day_map.get(day_time_match.group(1), 'Monday')
-            
-            time_in_str = day_time_match.group(2)
-            time_out_str = day_time_match.group(3)
-            
-            schedule_data['time_in'] = datetime.strptime(time_in_str, '%I:%M%p').time()
-            schedule_data['time_out'] = datetime.strptime(time_out_str, '%I:%M%p').time()
-        
-        # Extract Course/Section
-        section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s*\n|1st Semester)', full_text)
-        if section_match:
-            section_str = section_match.group(1).strip()
-            # Handle format like "BET-COET-C-BET-COET-C-4A-C"
-            parts = section_str.split('-')
-            if len(parts) >= 3:
-                # Extract course and section
-                # For "BET-COET-C-BET-COET-C-4A-C", we want "BET-COET-C" and "4A-C"
-                mid_point = len(parts) // 2
-                schedule_data['course_name'] = '-'.join(parts[:mid_point])
-                schedule_data['section_name'] = '-'.join(parts[-2:])
-        
-        # Extract student information
-        # Pattern: number. TUPC-XX-XXXX LASTNAME, FIRSTNAME MIDDLENAME
-        student_pattern = r'\d+\.\s*(TUPC-\d{2}-\d{4})\s+([A-Z\s,]+?)(?:\s+BET-COET|$)'
-        student_matches = re.finditer(student_pattern, full_text)
-
-        for match in student_matches:
-            student_no = match.group(1).strip()
-            name = match.group(2).strip()
-            
-            # Extract ID (TUPC-22-0352 → 220352)
-            id_match = re.match(r'TUPC-(\d{2})-(\d{4})', student_no)
-            if not id_match:
-                continue
-            
-            short_id = id_match.group(1) + id_match.group(2)  # e.g., "220352"
-            
-            # Parse name (LASTNAME, FIRSTNAME SECONDNAME MIDDLENAME)
-            name_parts = name.split(',')
-
-            if len(name_parts) >= 2:
-                last_name = name_parts[0].strip().title()
-                
-                # Split the part after comma and take only first 2 names
-                name_after_comma = name_parts[1].strip().split()
-                
-                # Take first two words (first name + second name), skip third (middle name)
-                if len(name_after_comma) >= 2:
-                    first_name = f"{name_after_comma[0]} {name_after_comma[1]}".title()
-                elif len(name_after_comma) == 1:
-                    first_name = name_after_comma[0].title()
-                else:
-                    first_name = name_parts[1].strip().title()
-                
-                all_students.append({
-                    'user_id': short_id,
-                    'first_name': first_name,
-                    'last_name': last_name
-                })
-        
-        # Validate we got the required schedule data
-        required_fields = ['course_code', 'course_title', 'day', 'time_in', 'time_out', 'course_name', 'section_name']
-        missing_fields = [f for f in required_fields if f not in schedule_data]
-        
-        if missing_fields:
-            return JsonResponse({
-                'status': 'error',
-                'message': f'Could not parse schedule information. Missing: {", ".join(missing_fields)}'
-            }, status=400)
-        
-        if not all_students:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Could not find any students in the PDF file'
-            }, status=400)
-        
-        # Create or get CourseSection
-        course_section, created = CourseSection.objects.get_or_create(
-            course_name=schedule_data['course_name'],
-            section_name=schedule_data['section_name']
-        )
-        
-        # Create ClassSchedule
-        class_schedule = ClassSchedule.objects.create(
-            course_code=schedule_data['course_code'],
-            course_title=schedule_data['course_title'],
-            time_in=schedule_data['time_in'],
-            time_out=schedule_data['time_out'],
-            days=schedule_data['day'],
-            course_section=course_section,
-            professor=None,
-            student_count=0,
-            grace_period=15,
-            remote_device='',
-            room_assignment='-'
-        )
-        
-        # Create student accounts
-        created_students = 0
-        skipped_students = 0
-        
-        for student_info in all_students:
-            if not Account.objects.filter(user_id=student_info['user_id']).exists():
-                
-                print(f"DEBUG: Saving student - ID: {student_info['user_id']}, First: '{student_info['first_name']}', Last: '{student_info['last_name']}'")
-                Account.objects.create(
-                    user_id=student_info['user_id'],
-                    email='',  # Empty - will be filled via mobile app
-                    first_name=student_info['first_name'],
-                    last_name=student_info['last_name'],
-                    role='Student',
-                    password='00000',
-                    sex='',
-                    status='Pending',
-                    course_section=course_section,
-                    fingerprint_template=None
-                )
-                created_students += 1
-            else:
-                skipped_students += 1
-        
-        # Update student count
-        class_schedule.student_count = len(all_students)
-        class_schedule.save()
-        
-        return JsonResponse({
-            'status': 'success',
-            'message': 'Successfully imported class schedule',
-            'details': {
-                'course_code': schedule_data['course_code'],
-                'course_title': schedule_data['course_title'],
-                'course_section': course_section.course_section,
-                'day': schedule_data['day'],
-                'time': f"{schedule_data['time_in']} - {schedule_data['time_out']}",
-                'students_created': created_students,
-                'students_skipped': skipped_students,
-                'total_students': len(all_students)
-            }
-        })
-        
-    except Exception as e:
-        print(f"Error importing PDF: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return JsonResponse({
-            'status': 'error',
-            'message': f'Failed to parse PDF: {str(e)}'
-        }, status=500)
         
 @admin_required
 def class_management(request):
