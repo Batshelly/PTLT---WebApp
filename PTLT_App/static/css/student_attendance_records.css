@@ -15,7 +15,6 @@ body {
   display: flex;
   padding: 1rem;
   color: #ffffff;
-
 }
 
 .cont_links {
@@ -132,15 +131,48 @@ h2 {
   align-items: center;
 }
 
-.attendance-table th, .attendance-table td {
+/* ============================================
+   TABLE BORDER FIX - Forces borders on all cells
+   ============================================ */
+.attendance-table th, 
+.attendance-table td {
   text-align: center;
   vertical-align: middle;
+  border: 1px solid #000 !important;
+}
+
+/* Force borders on ALL tables in attendance document */
+#attendance-doc table {
+  border-collapse: collapse !important;
+  border: 1px solid #000 !important;
+}
+
+#attendance-doc table th,
+#attendance-doc table td {
+  border: 1px solid #000 !important;
+}
+
+/* Ensure dynamically added rows/cells have borders */
+#attendanceTableBody tr,
+#attendanceTableBody td,
+#dateHeaderRow th {
+  border: 1px solid #000 !important;
+}
+
+/* Force Bootstrap table borders */
+.table-bordered th,
+.table-bordered td {
+  border: 1px solid #000 !important;
+}
+
+.table-bordered {
+  border: 1px solid #000 !important;
 }
 
 @media print {
     /* Reset body margins and add small side margins */
     body {
-        margin: 0 15px !important;  /* Small margins on left and right */
+        margin: 0 15px !important;
         padding: 0 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
@@ -157,12 +189,12 @@ h2 {
 
     /* Document content spacing */
     #attendance-doc {
-        position: static !important;  /* Remove fixed positioning */
-        margin: 1px 0 !important;   /* Small top/bottom margin */
-        padding: 1px !important;    /* Inner padding */
+        position: static !important;
+        margin: 1px 0 !important;
+        padding: 1px !important;
         width: 100% !important;
         background-color: #ffffff !important;
-        border: none !important;     /* Remove border for cleaner look */
+        border: none !important;
         z-index: auto !important;
     }
 
@@ -185,5 +217,12 @@ h2 {
     /* Page break control */
     .attendance-table {
         page-break-inside: avoid !important;
+    }
+
+    /* PRINT: Ensure borders show when printing/exporting */
+    #attendance-doc table,
+    #attendance-doc table th,
+    #attendance-doc table td {
+        border: 1px solid #000 !important;
     }
 }
