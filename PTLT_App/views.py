@@ -1014,7 +1014,7 @@ from .models import Account, ClassSchedule, CourseSection
 @csrf_exempt
 @instructor_or_admin_required
 def import_class_schedule(request):
-    """Import class schedules and create student accounts from CSV"""
+    """Import class schedules, students, AND attendance records from CSV"""
     if request.method != 'POST':
         return JsonResponse({
             'status': 'error',
@@ -1044,14 +1044,15 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [],
             'students_created': 0,
-            'students_linked': 0
+            'students_linked': 0,
+            'attendance_created': 0  # ✅ NEW
         }
         
         processed_schedules = set()
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # Extract class schedule data
+                # Class schedule fields
                 professor_user_id = row.get('professor_user_id', '').strip()
                 course_code = row.get('course_code', '').strip()
                 course_title = row.get('course_title', '').strip()
@@ -1064,19 +1065,25 @@ def import_class_schedule(request):
                 remote_device = row.get('remote_device', '').strip()
                 room_assignment = row.get('room_assignment', '').strip()
                 
-                # Extract student data
+                # Student fields
                 student_id = row.get('student_id', '').strip()
                 first_name = row.get('first_name', '').strip()
                 last_name = row.get('last_name', '').strip()
                 sex = row.get('sex', '').strip()
                 
+                # ✅ NEW: Attendance fields (optional)
+                attendance_date_str = row.get('attendance_date', '').strip()
+                attendance_time_in_str = row.get('attendance_time_in', '').strip()
+                attendance_time_out_str = row.get('attendance_time_out', '').strip()
+                attendance_status = row.get('attendance_status', 'Present').strip()
+                
                 # Validate required schedule fields
                 if not all([course_code, course_section_id, time_in_str, time_out_str]):
-                    results['errors'].append(f'Line {line_num}: Missing required class schedule fields')
+                    results['errors'].append(f'Line {line_num}: Missing required fields')
                     results['skipped'] += 1
                     continue
                 
-                # Parse times
+                # Parse schedule times
                 try:
                     from datetime import datetime
                     time_in = datetime.strptime(time_in_str, '%H:%M').time()
@@ -1102,7 +1109,7 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # Create or update ClassSchedule (only once per unique schedule)
+                # Create or update ClassSchedule
                 schedule_key = f"{course_code}_{course_section_id}"
                 
                 if schedule_key not in processed_schedules:
@@ -1121,63 +1128,79 @@ def import_class_schedule(request):
                             'room_assignment': room_assignment,
                         }
                     )
-                    
-                    action = "Created" if created else "Updated"
                     results['imported'] += 1
                     processed_schedules.add(schedule_key)
-                    
-                    print(f"{action} class schedule: {course_code} - {course_section.course_section}")
+                else:
+                    # Get existing schedule
+                    class_schedule = ClassSchedule.objects.get(
+                        course_code=course_code,
+                        course_section=course_section
+                    )
                 
-                # Handle student enrollment (NO PASSWORD FOR STUDENTS)
+                # Create student account
                 if student_id and first_name and last_name:
                     try:
-                        # Map sex values: M -> Male, F -> Female
                         sex_value = 'Male' if sex.upper() == 'M' else 'Female' if sex.upper() == 'F' else 'Other'
                         
-                        # Check if student already exists
                         student_account, student_created = Account.objects.get_or_create(
                             user_id=student_id,
                             defaults={
                                 'first_name': first_name,
                                 'last_name': last_name,
                                 'role': 'Student',
-                                'email': '',  # Empty by default
-                                'password': None,  # NO PASSWORD - students don't login
+                                'email': '',
+                                'password': None,  # NO PASSWORD
                                 'sex': sex_value,
-                                'status': 'Inactive',  # Cannot login
+                                'status': 'Inactive',
                                 'course_section': course_section
                             }
                         )
                         
                         if student_created:
                             results['students_created'] += 1
-                            print(f"Created student account: {student_id} - {first_name} {last_name}")
                         else:
-                            # If student already exists, ensure password is NULL and update section
-                            updated = False
-                            if student_account.password is not None:
-                                student_account.password = None
-                                updated = True
                             if student_account.course_section != course_section:
                                 student_account.course_section = course_section
-                                updated = True
-                            if updated:
                                 student_account.save()
                                 results['students_linked'] += 1
-                                print(f"Updated existing student {student_id} to {course_section.course_section}")
+                        
+                        # ✅ NEW: Create attendance record if date/time provided
+                        if attendance_date_str and attendance_time_in_str:
+                            try:
+                                attendance_date = datetime.strptime(attendance_date_str, '%Y-%m-%d').date()
+                                attendance_time_in = datetime.strptime(attendance_time_in_str, '%H:%M').time()
+                                attendance_time_out = None
+                                
+                                if attendance_time_out_str:
+                                    attendance_time_out = datetime.strptime(attendance_time_out_str, '%H:%M').time()
+                                
+                                # Create or update attendance record
+                                AttendanceRecord.objects.update_or_create(
+                                    class_schedule=class_schedule,
+                                    student=student_account,
+                                    date=attendance_date,
+                                    defaults={
+                                        'professor': professor or class_schedule.professor,
+                                        'course_section': course_section,
+                                        'time_in': attendance_time_in,
+                                        'time_out': attendance_time_out,
+                                        'status': attendance_status,
+                                        'fingerprint_data': b''  # Empty for CSV
+                                    }
+                                )
+                                results['attendance_created'] += 1
+                                
+                            except ValueError as e:
+                                results['errors'].append(f'Line {line_num}: Invalid attendance date/time - {str(e)}')
                             
                     except Exception as e:
-                        error_msg = f"Line {line_num}: Error with student {student_id}: {str(e)}"
-                        results['errors'].append(error_msg)
-                        print(error_msg)
+                        results['errors'].append(f'Line {line_num}: Error with student {student_id}: {str(e)}')
                 
             except Exception as e:
-                error_msg = f"Line {line_num}: {str(e)}"
-                results['errors'].append(error_msg)
+                results['errors'].append(f'Line {line_num}: {str(e)}')
                 results['skipped'] += 1
-                print(f"Error: {error_msg}")
         
-        # Update student_count for each schedule
+        # Update student counts
         for schedule_key in processed_schedules:
             course_code, section_id = schedule_key.split('_')
             try:
@@ -1186,57 +1209,37 @@ def import_class_schedule(request):
                     course_code=course_code,
                     course_section=course_section
                 )
-                
-                # Count actual students in this course_section
                 actual_count = Account.objects.filter(
                     course_section=course_section,
                     role='Student'
                 ).count()
-                
                 class_schedule.student_count = actual_count
                 class_schedule.save()
-                print(f"Updated student count for {course_code}: {actual_count}")
-                
             except Exception as e:
                 print(f"Error updating student count: {str(e)}")
         
-        # Determine status
-        if results['imported'] == 0 and results['skipped'] > 0:
-            status_code = 'failed'
-        elif results['skipped'] > 0:
-            status_code = 'partial'
-        else:
-            status_code = 'ok'
+        status_code = 'ok' if results['imported'] > 0 else 'failed'
         
-        response_data = {
+        return JsonResponse({
             'status': status_code,
             'imported': results['imported'],
             'students_created': results['students_created'],
             'students_linked': results['students_linked'],
+            'attendance_created': results['attendance_created'],  # ✅ NEW
             'skipped': results['skipped'],
             'errors': results['errors'][:10]
-        }
-        
-        print(f"Import complete. Schedules: {results['imported']}, "
-              f"Students created: {results['students_created']}, "
-              f"Students linked: {results['students_linked']}")
-        
-        return JsonResponse(response_data)
+        })
         
     except Exception as e:
-        error_message = str(e)
-        print(f"Fatal error in CSV import: {error_message}")
         import traceback
         traceback.print_exc()
-        
         return JsonResponse({
             'status': 'error',
-            'message': error_message,
+            'message': str(e),
             'imported': 0,
             'skipped': 0,
-            'errors': [f"Server error: {error_message}"]
+            'errors': [f"Server error: {str(e)}"]
         }, status=500)
-
 
 
 
