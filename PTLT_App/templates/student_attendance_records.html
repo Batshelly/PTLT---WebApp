@@ -237,27 +237,43 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
         .then(data => {
             let headerHtml = '';
             for(let i = 0; i < 8; i++) {
-                headerHtml += `<th class="date-th">${data.date_headers[i] || ''}</th>`;
+                headerHtml += `<th class="border border-dark">${data.date_headers[i] || ''}</th>`;
             }
             document.getElementById('dateHeaderRow').innerHTML = headerHtml;
             
             let tableHtml = '';
             data.attendance_table.forEach((student, idx) => {
-                tableHtml += `<tr><td>${idx+1}</td><td>${student.name}</td><td>${student.sex}</td>`;
-                student.dates.forEach(att => {
-                    // Only show time_in and time_out, leave empty if absent
-                    if (att.time_in && att.time_out) {
-                        tableHtml += `<td>${att.time_in} - ${att.time_out}</td>`;
+                tableHtml += `<tr class="border border-dark">
+                    <td class="border border-dark">${idx+1}</td>
+                    <td class="border border-dark">${student.name}</td>
+                    <td class="border border-dark">${student.sex}</td>`;
+                
+                // Add 8 date columns - ALWAYS with borders
+                for(let i = 0; i < 8; i++) {
+                    if (student.dates[i] && student.dates[i].time_in && student.dates[i].time_out) {
+                        tableHtml += `<td class="border border-dark">${student.dates[i].time_in} - ${student.dates[i].time_out}</td>`;
                     } else {
-                        tableHtml += `<td></td>`;  // Empty cell for absent
+                        tableHtml += `<td class="border border-dark">&nbsp;</td>`;  // ✅ Add non-breaking space
                     }
-                });
+                }
                 tableHtml += `</tr>`;
             });
             
-            // Pad remaining rows to 40
+            // Pad remaining rows to 40 - ALL with borders
             for(let i = data.attendance_table.length; i < 40; i++) {
-                tableHtml += `<tr><td>${i+1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+                tableHtml += `<tr class="border border-dark">
+                    <td class="border border-dark">${i+1}</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                </tr>`;
             }
             
             document.getElementById('attendanceTableBody').innerHTML = tableHtml;
@@ -268,6 +284,7 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
             }
         });
 });
+
 
 
 function clearTable() {
