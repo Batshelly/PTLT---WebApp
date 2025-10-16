@@ -110,10 +110,6 @@ h2 {
     border-bottom: 2px solid #0dcaf0;
 }
 
-.modal-header {
-  border-bottom: 2px solid #0dcaf0;
-}
-
 .modal-footer button {
   min-width: 120px;
 }
@@ -132,16 +128,74 @@ h2 {
 }
 
 /* ============================================
-   TABLE BORDER FIX - Forces borders on all cells
+   TABLE BORDER FIX - COMPLETE SOLUTION
    ============================================ */
+
+/* Force borders on ALL table elements */
+table {
+  border-collapse: collapse !important;
+  border: 1px solid #000 !important;
+}
+
+table tr {
+  border: 1px solid #000 !important;
+}
+
+table th,
+table td {
+  border: 1px solid #000 !important;
+  min-height: 25px !important;
+}
+
+/* Attendance table specific styles */
+.attendance-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
 .attendance-table th, 
 .attendance-table td {
   text-align: center;
   vertical-align: middle;
   border: 1px solid #000 !important;
+  min-height: 25px !important;
+  padding: 4px 8px !important;
 }
 
-/* Force borders on ALL tables in attendance document */
+/* Force borders on dynamically added content */
+#attendanceTableBody tr {
+  border: 1px solid #000 !important;
+}
+
+#attendanceTableBody td {
+  border: 1px solid #000 !important;
+  min-width: 80px !important;
+  min-height: 25px !important;
+  padding: 4px 8px !important;
+}
+
+/* Ensure empty cells show borders */
+#attendanceTableBody td:empty::after {
+  content: '\00a0';  /* Non-breaking space */
+  visibility: hidden;
+}
+
+#dateHeaderRow th {
+  border: 1px solid #000 !important;
+  padding: 4px 8px !important;
+}
+
+/* Force Bootstrap table borders */
+.table-bordered {
+  border: 1px solid #000 !important;
+}
+
+.table-bordered th,
+.table-bordered td {
+  border: 1px solid #000 !important;
+}
+
+/* All tables in attendance document */
 #attendance-doc table {
   border-collapse: collapse !important;
   border: 1px solid #000 !important;
@@ -152,25 +206,7 @@ h2 {
   border: 1px solid #000 !important;
 }
 
-/* Ensure dynamically added rows/cells have borders */
-#attendanceTableBody tr,
-#attendanceTableBody td,
-#dateHeaderRow th {
-  border: 1px solid #000 !important;
-}
-
-/* Force Bootstrap table borders */
-.table-bordered th,
-.table-bordered td {
-  border: 1px solid #000 !important;
-}
-
-.table-bordered {
-  border: 1px solid #000 !important;
-}
-
 @media print {
-    /* Reset body margins and add small side margins */
     body {
         margin: 0 15px !important;
         padding: 0 !important;
@@ -179,7 +215,6 @@ h2 {
         color-adjust: exact !important;
     }
 
-    /* Container adjustments */
     .container {
         max-width: none !important;
         width: 100% !important;
@@ -187,7 +222,6 @@ h2 {
         padding: 0 !important;
     }
 
-    /* Document content spacing */
     #attendance-doc {
         position: static !important;
         margin: 1px 0 !important;
@@ -198,31 +232,28 @@ h2 {
         z-index: auto !important;
     }
 
-    /* Hide buttons, nav, pagination */
     .d-print-none,
     .no-print {
         display: none !important;
     }
 
-    /* Table adjustments for better printing */
     .table {
         margin-bottom: 0.5rem !important;
     }
 
-    /* Ensure tables fit properly */
     .table-responsive {
         overflow: visible !important;
     }
 
-    /* Page break control */
     .attendance-table {
         page-break-inside: avoid !important;
     }
 
-    /* PRINT: Ensure borders show when printing/exporting */
-    #attendance-doc table,
-    #attendance-doc table th,
-    #attendance-doc table td {
+    /* Ensure borders print correctly */
+    table,
+    table tr,
+    table th,
+    table td {
         border: 1px solid #000 !important;
     }
 }
