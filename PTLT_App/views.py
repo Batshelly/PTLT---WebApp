@@ -2245,10 +2245,10 @@ def get_attendance_data_api(request):
         traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
+# for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX using template at static/templates/attendance_template.docx"""
-    # ADD LOGGING HERE - INSIDE the function
+    """Generate DOCX using template at PTLT_App/templates/attendance_template.docx"""
     import logging
     logger = logging.getLogger(__name__)
     logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
@@ -2263,12 +2263,14 @@ def generate_attendance_docx(request, schedule_id):
         from datetime import datetime
         from django.conf import settings
 
-        # Template is at: /templates/attendance_template.docx
+        # Template is at: PTLT_App/templates/attendance_template.docx
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        
+        logger.error(f"Looking for template at: {template_path}")
         
         # Check if file exists
         if not os.path.exists(template_path):
-            logger.error(f"Template not found at: {template_path}")
+            logger.error(f"✗ Template not found at: {template_path}")
             return HttpResponse(f"Template not found at: {template_path}", status=500)
 
         logger.error("✓ Template found, loading...")
@@ -2340,21 +2342,45 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error("✓ Placeholders replaced")
 
-        # Get attendance table (last table in document)
+        # Get attendance table (last table in document - the big attendance table)
         attendance_table = doc.tables[-1]
         
-        # Update date headers (row 2 - 3rd row)
-        date_row = attendance_table.rows[2]
-        for idx, date in enumerate(attendance_dates):
-            if idx + 3 < len(date_row.cells):
-                date_row.cells[idx + 3].text = date.strftime('%m/%d')
+        logger.error(f"✓ Table found with {len(attendance_table.rows)} rows")
 
-        # Remove existing student rows (keep first 3 header rows)
-        rows_to_remove = len(attendance_table.rows) - 3
-        for _ in range(rows_to_remove):
-            attendance_table._element.remove(attendance_table.rows[3]._element)
+        # Your template structure:
+        # Row 0-1: "Status" header (merged)
+        # Row 2: "Date" header (merged) 
+        # Row 3: Column headers (No., Name, Sex, dates...)
+        # Row 4+: Data rows or empty rows
 
-        logger.error("✓ Table prepared")
+        # The actual column header row where we put dates is row 3 (4th row)
+        if len(attendance_table.rows) >= 4:
+            header_row = attendance_table.rows[3]
+            
+            # Fill in the date columns (starting from column index 3)
+            for idx, date in enumerate(attendance_dates[:8]):
+                col_idx = 3 + idx
+                if col_idx < len(header_row.cells):
+                    header_row.cells[col_idx].text = date.strftime('%m/%d')
+            
+            logger.error("✓ Date headers filled")
+            
+            # Remove any existing data rows (rows after row 3)
+            rows_to_remove = len(attendance_table.rows) - 4
+            if rows_to_remove > 0:
+                for _ in range(rows_to_remove):
+                    attendance_table._element.remove(attendance_table.rows[4]._element)
+                logger.error(f"✓ Removed {rows_to_remove} template rows")
+        else:
+            logger.error("✗ Template structure unexpected - creating new header row")
+            # Template doesn't have expected structure, add a header row
+            header_row = attendance_table.add_row()
+            header_row.cells[0].text = 'No.'
+            header_row.cells[1].text = 'Name'
+            header_row.cells[2].text = 'Sex'
+            for idx, date in enumerate(attendance_dates[:8]):
+                if 3 + idx < len(header_row.cells):
+                    header_row.cells[3 + idx].text = date.strftime('%m/%d')
 
         # Get attendance data
         attendance_qs = AttendanceRecord.objects.filter(
@@ -2375,14 +2401,20 @@ def generate_attendance_docx(request, schedule_id):
         # Add student rows
         for idx, student in enumerate(students, start=1):
             row = attendance_table.add_row()
+            
+            # Number
             row.cells[0].text = str(idx)
             row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Name
             row.cells[1].text = f"{student.last_name}, {student.first_name}"
+            
+            # Sex
             row.cells[2].text = student.sex[0] if student.sex else ''
             row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
-            # Add attendance for each date
-            for date_idx, date in enumerate(attendance_dates):
+            # Attendance for each date
+            for date_idx, date in enumerate(attendance_dates[:8]):
                 col_idx = 3 + date_idx
                 if col_idx < len(row.cells):
                     if date in attendance_data[student.id]:
@@ -2393,13 +2425,15 @@ def generate_attendance_docx(request, schedule_id):
                             row.cells[col_idx].text = f"{time_in_str} - {time_out_str}"
                     row.cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        logger.error(f"✓ Added {students.count()} students")
+
         # Pad to 40 rows
         for idx in range(students.count() + 1, 41):
             row = attendance_table.add_row()
             row.cells[0].text = str(idx)
             row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        logger.error("✓ Students added to table")
+        logger.error("✓ Table complete")
 
         # Save to buffer
         buffer = BytesIO()
@@ -2420,6 +2454,9 @@ def generate_attendance_docx(request, schedule_id):
         
         return response
 
+    except ClassSchedule.DoesNotExist:
+        logger.error(f"✗ Schedule {schedule_id} not found")
+        return HttpResponse('<h3>Error</h3><p>Class schedule not found</p>', status=404)
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
