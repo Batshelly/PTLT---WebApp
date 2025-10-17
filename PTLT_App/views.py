@@ -2245,20 +2245,14 @@ def get_attendance_data_api(request):
         traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
-import logging
-logger = logging.getLogger(__name__)
-@instructor_or_admin_required
-def generate_attendance_docx(request, schedule_id):
-    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
-    try:
-        # ... rest of code
-    except Exception as e:
-        logger.error(f"DOCX ERROR: {str(e)}", exc_info=True)
-        raise
-# DOCX Generation (for download)
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
     """Generate DOCX using template at static/templates/attendance_template.docx"""
+    # ADD LOGGING HERE - INSIDE the function
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
+    
     try:
         import os
         from docx import Document
@@ -2274,19 +2268,26 @@ def generate_attendance_docx(request, schedule_id):
         
         # Check if file exists
         if not os.path.exists(template_path):
+            logger.error(f"Template not found at: {template_path}")
             return HttpResponse(f"Template not found at: {template_path}", status=500)
 
+        logger.error("✓ Template found, loading...")
+        
         # Load template
         doc = Document(template_path)
+        logger.error("✓ Template loaded successfully")
 
         # Get class schedule
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        logger.error(f"✓ Found schedule: {class_schedule.course_code}")
         
         # Get students
         students = Account.objects.filter(
             course_section=class_schedule.course_section, 
             role='Student'
         ).order_by('last_name', 'first_name')
+        
+        logger.error(f"✓ Found {students.count()} students")
         
         # Get date range
         date_range = request.GET.get('date_range')
@@ -2311,6 +2312,7 @@ def generate_attendance_docx(request, schedule_id):
             ).values_list('date', flat=True).distinct().order_by('date')[:8]
         
         attendance_dates = list(attendance_dates)
+        logger.error(f"✓ Found {len(attendance_dates)} attendance dates")
 
         # Replace placeholders in template
         replacements = {
@@ -2336,6 +2338,8 @@ def generate_attendance_docx(request, schedule_id):
                         if key in cell.text:
                             cell.text = cell.text.replace(key, value)
 
+        logger.error("✓ Placeholders replaced")
+
         # Get attendance table (last table in document)
         attendance_table = doc.tables[-1]
         
@@ -2349,6 +2353,8 @@ def generate_attendance_docx(request, schedule_id):
         rows_to_remove = len(attendance_table.rows) - 3
         for _ in range(rows_to_remove):
             attendance_table._element.remove(attendance_table.rows[3]._element)
+
+        logger.error("✓ Table prepared")
 
         # Get attendance data
         attendance_qs = AttendanceRecord.objects.filter(
@@ -2393,6 +2399,8 @@ def generate_attendance_docx(request, schedule_id):
             row.cells[0].text = str(idx)
             row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+        logger.error("✓ Students added to table")
+
         # Save to buffer
         buffer = BytesIO()
         doc.save(buffer)
@@ -2400,6 +2408,8 @@ def generate_attendance_docx(request, schedule_id):
 
         # Create filename
         filename = f"Attendance_{class_schedule.course_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+
+        logger.error(f"✓ DOCX generation complete: {filename}")
 
         # Send response
         response = HttpResponse(
@@ -2413,6 +2423,7 @@ def generate_attendance_docx(request, schedule_id):
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
+        logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(
             f'<h3>Error Generating DOCX</h3><pre>{error_msg}</pre>',
             status=500
