@@ -127,7 +127,6 @@
     </div>
 </div>
 
-
 <!-- CSV Import Modal -->
 <div class="modal fade" id="csvImportModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -172,6 +171,25 @@
 let selectedClassId = null;
 let selectedDateRange = null;
 
+// Function to update download button state
+function updateDownloadButton() {
+    const downloadBtn = document.getElementById('downloadBtn');
+    
+    if (selectedClassId && selectedDateRange) {
+        downloadBtn.disabled = false;
+        downloadBtn.classList.remove('btn-secondary');
+        downloadBtn.classList.add('btn-success');
+        downloadBtn.style.opacity = '1';
+        downloadBtn.style.cursor = 'pointer';
+    } else {
+        downloadBtn.disabled = true;
+        downloadBtn.classList.remove('btn-success');
+        downloadBtn.classList.add('btn-secondary');
+        downloadBtn.style.opacity = '0.5';
+        downloadBtn.style.cursor = 'not-allowed';
+    }
+}
+
 // Initialize empty table
 function initEmptyTable() {
     let html = '';
@@ -181,6 +199,7 @@ function initEmptyTable() {
     document.getElementById('attendanceTableBody').innerHTML = html;
 }
 initEmptyTable();
+updateDownloadButton();
 
 // Subject change
 document.getElementById('subjectSelect').addEventListener('change', function() {
@@ -190,7 +209,7 @@ document.getElementById('subjectSelect').addEventListener('change', function() {
     if (!selectedClassId) {
         document.getElementById('dateRangeSelect').disabled = true;
         document.getElementById('dateRangeSelect').innerHTML = '<option value="">-- Select Date Range --</option>';
-        document.getElementById('downloadBtn').disabled = true;
+        updateDownloadButton();
         clearTable();
         return;
     }
@@ -212,7 +231,7 @@ document.getElementById('subjectSelect').addEventListener('change', function() {
             document.getElementById('dateRangeSelect').innerHTML = dateHtml;
             document.getElementById('dateRangeSelect').disabled = data.date_ranges.length === 0;
             
-            document.getElementById('downloadBtn').disabled = false;
+            updateDownloadButton();
             
             if (data.date_ranges.length === 0) {
                 document.getElementById('noRecordsMsg').style.display = 'block';
@@ -229,6 +248,7 @@ document.getElementById('subjectSelect').addEventListener('change', function() {
 // Date range change
 document.getElementById('dateRangeSelect').addEventListener('change', function() {
     selectedDateRange = this.value;
+    updateDownloadButton();
     
     if (!selectedDateRange || !selectedClassId) return;
     
@@ -248,18 +268,16 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
                     <td class="border border-dark">${student.name}</td>
                     <td class="border border-dark">${student.sex}</td>`;
                 
-                // Add 8 date columns - ALWAYS with borders
                 for(let i = 0; i < 8; i++) {
                     if (student.dates[i] && student.dates[i].time_in && student.dates[i].time_out) {
                         tableHtml += `<td class="border border-dark">${student.dates[i].time_in} - ${student.dates[i].time_out}</td>`;
                     } else {
-                        tableHtml += `<td class="border border-dark">&nbsp;</td>`;  // ✅ Add non-breaking space
+                        tableHtml += `<td class="border border-dark">&nbsp;</td>`;
                     }
                 }
                 tableHtml += `</tr>`;
             });
             
-            // Pad remaining rows to 40 - ALL with borders
             for(let i = data.attendance_table.length; i < 40; i++) {
                 tableHtml += `<tr class="border border-dark">
                     <td class="border border-dark">${i+1}</td>
@@ -285,8 +303,6 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
         });
 });
 
-
-
 function clearTable() {
     document.getElementById('classSubject').textContent = '[Subject]';
     document.getElementById('classFaculty').textContent = '[Faculty]';
@@ -300,10 +316,9 @@ function clearTable() {
     document.getElementById('studentCount').style.display = 'none';
 }
 
-
 function downloadDocx() {
-    if (!selectedClassId) { 
-        alert('Please select a class first!'); 
+    if (!selectedClassId || !selectedDateRange) { 
+        alert('Please select both a class and date range first!'); 
         return; 
     }
     
