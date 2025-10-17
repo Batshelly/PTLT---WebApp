@@ -2248,7 +2248,7 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX using exact template structure"""
+    """Generate DOCX using exact template structure with smaller font"""
     import logging
     logger = logging.getLogger(__name__)
     logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
@@ -2256,6 +2256,7 @@ def generate_attendance_docx(request, schedule_id):
     try:
         import os
         from docx import Document
+        from docx.shared import Pt
         from io import BytesIO
         from collections import defaultdict
         from datetime import datetime
@@ -2373,16 +2374,21 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error(f"✓ Built {len(replacements)} replacements")
 
-        # Replace all placeholders in document
+        # Replace all placeholders in document AND set smaller font
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
+                        # Replace placeholders
                         for key, value in replacements.items():
                             if key in paragraph.text:
                                 paragraph.text = paragraph.text.replace(key, value)
+                        
+                        # Set font size to 8pt for all runs in the paragraph
+                        for run in paragraph.runs:
+                            run.font.size = Pt(8)
 
-        logger.error("✓ All placeholders replaced")
+        logger.error("✓ All placeholders replaced and font size set to 8pt")
 
         # Save to buffer
         buffer = BytesIO()
