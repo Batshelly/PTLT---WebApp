@@ -2386,7 +2386,7 @@ def generate_attendance_docx(request, schedule_id):
                         
                         # Set font size to 8pt for all runs in the paragraph
                         for run in paragraph.runs:
-                            run.font.size = Pt(8)
+                            run.font.size = Pt(7)
 
         logger.error("✓ All placeholders replaced and font size set to 8pt")
 
