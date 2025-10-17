@@ -2263,8 +2263,8 @@ def generate_attendance_docx(request, schedule_id):
         from datetime import datetime
         from django.conf import settings
 
-        # Template is at: static/templates/attendance_template.docx
-        template_path = os.path.join(settings.BASE_DIR, 'static', 'templates', 'attendance_template.docx')
+        # Template is at: /templates/attendance_template.docx
+        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         
         # Check if file exists
         if not os.path.exists(template_path):
