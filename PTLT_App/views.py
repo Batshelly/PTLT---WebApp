@@ -2248,7 +2248,7 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX with filename based on date range from spinboxes"""
+    """Generate DOCX with small font only for time in/out cells"""
     import logging
     logger = logging.getLogger(__name__)
     logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
@@ -2278,26 +2278,24 @@ def generate_attendance_docx(request, schedule_id):
         students = list(Account.objects.filter(
             course_section=class_schedule.course_section, 
             role='Student'
-        ).order_by('last_name', 'first_name')[:40])  # Max 40 students
+        ).order_by('last_name', 'first_name')[:40])
         
         logger.error(f"✓ Found {len(students)} students")
         
         # Get date range from spinbox values
         date_range = request.GET.get('date_range')
         start_date, end_date = None, None
-        date_range_str = ""  # For filename
+        date_range_str = ""
         
         if date_range:
             try:
                 start_str, end_str = date_range.split('to')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-                # Format for filename: MMDD-MMDD
                 date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
                 logger.error(f"✓ Date range: {start_date} to {end_date}")
             except Exception as e:
                 logger.error(f"! Error parsing date range: {str(e)}")
-                date_range_str = ""
 
         # Get attendance dates (max 8)
         if start_date and end_date:
@@ -2328,16 +2326,17 @@ def generate_attendance_docx(request, schedule_id):
                 'time_out': record.time_out
             }
 
-        # Build all replacements
-        replacements = {
-            # Table 1 - Class details
-            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
-            '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
-            '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
-            '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
-            '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
-        }
+        # Build all replacements - track which ones are time cells
+        replacements = {}
+        time_cell_keys = set()  # Track keys that contain time data
+        
+        # Table 1 - Class details
+        replacements['{{subject}}'] = class_schedule.course_title or class_schedule.course_code
+        replacements['{{faculty_name}}'] = f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA"
+        replacements['{{course}}'] = class_schedule.course_section.course_name if class_schedule.course_section else ""
+        replacements['{{room_assignment}}'] = class_schedule.room_assignment or "TBA"
+        replacements['{{year_section}}'] = class_schedule.course_section.section_name if class_schedule.course_section else ""
+        replacements['{{schedule}}'] = f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
 
         # Table 2 - Dates
         for i in range(1, 9):
@@ -2357,6 +2356,8 @@ def generate_attendance_docx(request, schedule_id):
                 # Attendance times for this student
                 for j in range(1, 9):
                     date_idx = j - 1
+                    time_key = f'{{{{student{i}_time{j}}}}}'
+                    
                     if date_idx < len(attendance_dates):
                         date = attendance_dates[date_idx]
                         if date in attendance_data[student.id]:
@@ -2364,13 +2365,14 @@ def generate_attendance_docx(request, schedule_id):
                             time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                             time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                             if time_in_str and time_out_str:
-                                replacements[f'{{{{student{i}_time{j}}}}}'] = f"{time_in_str} - {time_out_str}"
+                                replacements[time_key] = f"{time_in_str} - {time_out_str}"
+                                time_cell_keys.add(time_key)  # Mark as time cell
                             else:
-                                replacements[f'{{{{student{i}_time{j}}}}}'] = ''
+                                replacements[time_key] = ''
                         else:
-                            replacements[f'{{{{student{i}_time{j}}}}}'] = ''
+                            replacements[time_key] = ''
                     else:
-                        replacements[f'{{{{student{i}_time{j}}}}}'] = ''
+                        replacements[time_key] = ''
             else:
                 # Empty row
                 replacements[f'{{{{student{i}_name}}}}'] = ''
@@ -2380,21 +2382,28 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error(f"✓ Built {len(replacements)} replacements")
 
-        # Replace all placeholders in document AND set smaller font
+        # Replace all placeholders and set font size ONLY for time cells
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
+                        # Check if this cell contains time data
+                        is_time_cell = False
+                        
                         # Replace placeholders
                         for key, value in replacements.items():
                             if key in paragraph.text:
                                 paragraph.text = paragraph.text.replace(key, value)
+                                # Check if this is a time cell
+                                if key in time_cell_keys:
+                                    is_time_cell = True
                         
-                        # Set font size to 8pt for all runs in the paragraph
-                        for run in paragraph.runs:
-                            run.font.size = Pt(5)
+                        # Set font size to 7pt ONLY for time cells
+                        if is_time_cell:
+                            for run in paragraph.runs:
+                                run.font.size = Pt(5)
 
-        logger.error("✓ All placeholders replaced and font size set to 8pt")
+        logger.error("✓ All placeholders replaced, font size set to 5pt for time cells only")
 
         # Save to buffer
         buffer = BytesIO()
@@ -2402,8 +2411,6 @@ def generate_attendance_docx(request, schedule_id):
         buffer.seek(0)
 
         # Create filename with date range
-        # Format: Attendance_COURSECODE_MMDD-MMDD.docx
-        # Example: Attendance_CSIT201_1015-1022.docx
         filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
         
         logger.error(f"✓ Complete: {filename}")
