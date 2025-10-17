@@ -2304,7 +2304,7 @@ def generate_attendance_docx(request, schedule_id):
         if start_date and end_date:
             attendance_qs = attendance_qs.filter(date__range=[start_date, end_date])
         
-        # Map attendance data: {student_id: {date: {time_in, time_out}}}
+        # Map attendance data
         attendance_data = defaultdict(lambda: defaultdict(dict))
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
@@ -2342,14 +2342,14 @@ def generate_attendance_docx(request, schedule_id):
         if len(doc.tables) >= 3:
             attendance_table = doc.tables[2]
             
-            # Update date headers (row 2, cells 3-10)
+            # Update date headers
             if len(attendance_table.rows) >= 3:
                 date_row = attendance_table.rows[2]
                 for idx, date in enumerate(attendance_dates[:8]):
                     if idx + 3 < len(date_row.cells):
                         date_row.cells[idx + 3].text = date.strftime('%m/%d')
             
-            # Remove existing data rows (keep first 3 header rows)
+            # Remove existing data rows
             rows_to_remove = len(attendance_table.rows) - 3
             for _ in range(rows_to_remove):
                 attendance_table._element.remove(attendance_table.rows[3]._element)
@@ -2358,18 +2358,14 @@ def generate_attendance_docx(request, schedule_id):
             for idx, student in enumerate(students, start=1):
                 row = attendance_table.add_row()
                 
-                # Number
                 row.cells[0].text = str(idx)
                 row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Name
                 row.cells[1].text = f"{student.last_name}, {student.first_name}"
                 
-                # Sex
                 row.cells[2].text = student.sex[0] if student.sex else ''
                 row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Attendance for each date (8 columns)
                 for date_idx, date in enumerate(attendance_dates[:8]):
                     cell_idx = date_idx + 3
                     if cell_idx < len(row.cells):
@@ -2379,36 +2375,26 @@ def generate_attendance_docx(request, schedule_id):
                             time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                             if time_in_str and time_out_str:
                                 row.cells[cell_idx].text = f"{time_in_str} - {time_out_str}"
-                            else:
-                                row.cells[cell_idx].text = ''
-                        else:
-                            row.cells[cell_idx].text = ''
                         row.cells[cell_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Format all cells
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.font.size = Pt(9)
             
-            # Add empty rows to reach 40 total
-            current_students = len(students)
-            for idx in range(current_students + 1, 41):
+            # Pad to 40 rows
+            for idx in range(len(students) + 1, 41):
                 row = attendance_table.add_row()
                 row.cells[0].text = str(idx)
                 row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for cell in row.cells[1:]:
-                    cell.text = ''
         
-        # Save to BytesIO
+        # Save to buffer
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
         
-        # Generate filename
         filename = f"Attendance_{class_schedule.course_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         
-        # Create HTTP response
         response = HttpResponse(
             buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -2418,13 +2404,12 @@ def generate_attendance_docx(request, schedule_id):
         return response
         
     except ClassSchedule.DoesNotExist:
-        messages.error(request, 'Class schedule not found')
-        return redirect('student_attendance_records')
+        return HttpResponse('Class schedule not found', status=404)
     except Exception as e:
         import traceback
         traceback.print_exc()
-        messages.error(request, f'Error generating DOCX: {str(e)}')
-        return redirect('student_attendance_records')
+        return HttpResponse(f'Error: {str(e)}', status=500)
+
 
 
 # for pdf preview also
