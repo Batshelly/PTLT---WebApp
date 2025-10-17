@@ -322,18 +322,45 @@ function downloadDocx() {
         return; 
     }
     
+    // Show loading indicator
+    const downloadBtn = document.getElementById('downloadBtn');
+    const originalHtml = downloadBtn.innerHTML;
+    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Downloading...';
+    downloadBtn.disabled = true;
+    
     let url = `/attendance/docx/${selectedClassId}/`;
     if (selectedDateRange) {
         url += `?date_range=${selectedDateRange}`;
     }
     
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // Use fetch for better control
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error('Download failed');
+            return response.blob();
+        })
+        .then(blob => {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `Attendance_${selectedClassId}_${selectedDateRange}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+            
+            // Reset button
+            downloadBtn.innerHTML = originalHtml;
+            downloadBtn.disabled = false;
+        })
+        .catch(err => {
+            console.error('Download error:', err);
+            alert('Download failed. Please try again.');
+            downloadBtn.innerHTML = originalHtml;
+            downloadBtn.disabled = false;
+        });
 }
+
 
 // CSV Upload
 document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
