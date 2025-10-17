@@ -2249,27 +2249,24 @@ def get_attendance_data_api(request):
 # DOCX Generation (for download)
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate attendance DOCX from template"""
+    """Generate attendance DOCX without template - creates from scratch"""
     try:
         from docx import Document
-        from docx.shared import Pt
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt, Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TABLE_ALIGNMENT
+        from docx.oxml.shared import OxmlElement
+        from docx.oxml.ns import qn
         from io import BytesIO
         from datetime import datetime
-        import os
-        from django.conf import settings
         from collections import defaultdict
         
-        print(f"=== Starting DOCX generation for schedule_id: {schedule_id} ===")
+        print(f"=== DOCX Generation Started for schedule_id: {schedule_id} ===")
         
         # Get class schedule
-        try:
-            class_schedule = ClassSchedule.objects.get(id=schedule_id)
-            print(f"✓ Found schedule: {class_schedule.course_code}")
-        except ClassSchedule.DoesNotExist:
-            return HttpResponse('Class schedule not found', status=404)
+        class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        print(f"✓ Schedule: {class_schedule.course_code}")
         
-        # Get date range if provided
+        # Get date range
         date_range = request.GET.get('date_range')
         start_date = None
         end_date = None
@@ -2279,9 +2276,8 @@ def generate_attendance_docx(request, schedule_id):
                 start_str, end_str = date_range.split('to')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-                print(f"✓ Date range: {start_date} to {end_date}")
             except:
-                print("! Invalid date range format")
+                pass
         
         # Get attendance dates (max 8)
         if start_date and end_date:
@@ -2295,14 +2291,14 @@ def generate_attendance_docx(request, schedule_id):
             ).values_list('date', flat=True).distinct().order_by('date')[:8]
         
         attendance_dates = list(attendance_dates)
-        print(f"✓ Found {len(attendance_dates)} attendance dates")
+        print(f"✓ Dates: {len(attendance_dates)}")
         
-        # Get all students in this course section
+        # Get students
         students = Account.objects.filter(
             course_section=class_schedule.course_section,
             role='Student'
         ).order_by('last_name', 'first_name')
-        print(f"✓ Found {students.count()} students")
+        print(f"✓ Students: {students.count()}")
         
         # Get attendance records
         attendance_qs = AttendanceRecord.objects.filter(
@@ -2313,9 +2309,7 @@ def generate_attendance_docx(request, schedule_id):
         if start_date and end_date:
             attendance_qs = attendance_qs.filter(date__range=[start_date, end_date])
         
-        print(f"✓ Found {attendance_qs.count()} attendance records")
-        
-        # Map attendance data
+        # Map attendance
         attendance_data = defaultdict(lambda: defaultdict(dict))
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
@@ -2323,142 +2317,130 @@ def generate_attendance_docx(request, schedule_id):
                 'time_out': record.time_out
             }
         
-        # Try multiple template paths
-        possible_paths = [
-            os.path.join(settings.BASE_DIR, 'static', 'templates', 'attendance_template.docx'),
-            os.path.join(settings.BASE_DIR, 'static', 'attendance_template.docx'),
-            os.path.join(settings.BASE_DIR, 'templates', 'attendance_template.docx'),
-            os.path.join(settings.STATIC_ROOT, 'templates', 'attendance_template.docx') if hasattr(settings, 'STATIC_ROOT') and settings.STATIC_ROOT else None,
-        ]
+        # Create document from scratch
+        doc = Document()
         
-        template_path = None
-        for path in possible_paths:
-            if path and os.path.exists(path):
-                template_path = path
-                print(f"✓ Found template at: {path}")
-                break
+        # Set narrow margins
+        sections = doc.sections
+        for section in sections:
+            section.top_margin = Inches(0.5)
+            section.bottom_margin = Inches(0.5)
+            section.left_margin = Inches(0.5)
+            section.right_margin = Inches(0.5)
         
-        if not template_path:
-            error_msg = f"Template not found. Tried: {', '.join([p for p in possible_paths if p])}"
-            print(f"✗ {error_msg}")
-            return HttpResponse(error_msg, status=500)
+        # Header info table
+        header_table = doc.add_table(rows=3, cols=4)
+        header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Load template
-        doc = Document(template_path)
-        print(f"✓ Loaded template, {len(doc.tables)} tables found")
+        # Row 1
+        header_table.cell(0, 0).text = 'SUBJECT'
+        header_table.cell(0, 1).text = class_schedule.course_title or class_schedule.course_code
+        header_table.cell(0, 2).text = 'FACULTY IN-CHARGE'
+        faculty_name = f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA"
+        header_table.cell(0, 3).text = faculty_name
         
-        # Replace placeholders in header tables (first 2 tables)
-        for table_idx, table in enumerate(doc.tables[:2]):
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        original_text = paragraph.text
-                        new_text = original_text
-                        
-                        new_text = new_text.replace('{{SUBJECT}}', class_schedule.course_title or class_schedule.course_code)
-                        new_text = new_text.replace('{{FACULTY}}', f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA")
-                        new_text = new_text.replace('{{COURSE}}', class_schedule.course_section.course_name if class_schedule.course_section else "")
-                        new_text = new_text.replace('{{ROOM}}', class_schedule.room_assignment or "TBA")
-                        new_text = new_text.replace('{{SECTION}}', class_schedule.course_section.section_name if class_schedule.course_section else "")
-                        new_text = new_text.replace('{{SCHEDULE}}', f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}")
-                        
-                        if new_text != original_text:
-                            paragraph.text = new_text
+        # Row 2
+        header_table.cell(1, 0).text = 'COURSE'
+        header_table.cell(1, 1).text = class_schedule.course_section.course_name if class_schedule.course_section else ""
+        header_table.cell(1, 2).text = 'BLDG. & ROOM NO.'
+        header_table.cell(1, 3).text = class_schedule.room_assignment or "TBA"
         
-        print("✓ Replaced header placeholders")
+        # Row 3
+        header_table.cell(2, 0).text = 'YEAR & SECTION'
+        header_table.cell(2, 1).text = class_schedule.course_section.section_name if class_schedule.course_section else ""
+        header_table.cell(2, 2).text = 'SCHEDULE (DAY & TIME)'
+        header_table.cell(2, 3).text = f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
         
-        # Get attendance table (should be 3rd table)
-        if len(doc.tables) >= 3:
-            attendance_table = doc.tables[2]
-            print(f"✓ Processing attendance table ({len(attendance_table.rows)} rows)")
+        doc.add_paragraph()  # Spacing
+        
+        # Attendance table
+        num_date_cols = 8
+        attendance_table = doc.add_table(rows=43, cols=3 + num_date_cols)  # 3 fixed cols + 8 date cols
+        attendance_table.style = 'Table Grid'
+        
+        # Header row 1 - "Status" merged across date columns
+        status_cell = attendance_table.cell(0, 3)
+        for i in range(4, 3 + num_date_cols):
+            status_cell.merge(attendance_table.cell(0, i))
+        status_cell.text = 'Status'
+        status_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Header row 2 - "Date" merged across date columns  
+        date_cell = attendance_table.cell(1, 3)
+        for i in range(4, 3 + num_date_cols):
+            date_cell.merge(attendance_table.cell(1, i))
+        date_cell.text = 'Date'
+        date_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Header row 3 - Column headers
+        attendance_table.cell(2, 0).text = 'No.'
+        attendance_table.cell(2, 1).text = 'Name'
+        attendance_table.cell(2, 2).text = 'Sex (M/F)'
+        
+        # Merge first 3 rows for No, Name, Sex columns
+        for col_idx in range(3):
+            cell_0 = attendance_table.cell(0, col_idx)
+            cell_0.merge(attendance_table.cell(1, col_idx))
+            cell_0.merge(attendance_table.cell(2, col_idx))
+            cell_0.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add date headers
+        for idx, date in enumerate(attendance_dates[:num_date_cols]):
+            if idx < num_date_cols:
+                cell = attendance_table.cell(2, 3 + idx)
+                cell.text = date.strftime('%m/%d')
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Fill empty date columns
+        for idx in range(len(attendance_dates), num_date_cols):
+            attendance_table.cell(2, 3 + idx).text = 'Date'
+        
+        # Add student data (40 rows)
+        for idx in range(40):
+            row_idx = 3 + idx
+            attendance_table.cell(row_idx, 0).text = str(idx + 1)
+            attendance_table.cell(row_idx, 0).paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
-            # Update date headers (row index 2)
-            if len(attendance_table.rows) >= 3:
-                date_row = attendance_table.rows[2]
-                for idx, date in enumerate(attendance_dates[:8]):
-                    cell_idx = idx + 3  # Skip first 3 columns
-                    if cell_idx < len(date_row.cells):
-                        date_row.cells[cell_idx].text = date.strftime('%m/%d')
-                print("✓ Updated date headers")
-            
-            # Remove existing data rows (keep first 3 header rows)
-            rows_to_remove = len(attendance_table.rows) - 3
-            for _ in range(rows_to_remove):
-                attendance_table._element.remove(attendance_table.rows[3]._element)
-            print(f"✓ Removed {rows_to_remove} existing rows")
-            
-            # Add student data rows
-            for idx, student in enumerate(students, start=1):
-                row = attendance_table.add_row()
+            if idx < students.count():
+                student = students[idx]
+                attendance_table.cell(row_idx, 1).text = f"{student.last_name}, {student.first_name}"
+                attendance_table.cell(row_idx, 2).text = student.sex[0] if student.sex else ''
+                attendance_table.cell(row_idx, 2).paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Number
-                row.cells[0].text = str(idx)
-                row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                
-                # Name
-                row.cells[1].text = f"{student.last_name}, {student.first_name}"
-                
-                # Sex
-                row.cells[2].text = student.sex[0] if student.sex else ''
-                row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                
-                # Attendance data for each date
-                for date_idx, date in enumerate(attendance_dates[:8]):
-                    cell_idx = date_idx + 3
-                    if cell_idx < len(row.cells):
-                        if date in attendance_data[student.id]:
-                            att = attendance_data[student.id][date]
-                            time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
-                            time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                            if time_in_str and time_out_str:
-                                row.cells[cell_idx].text = f"{time_in_str} - {time_out_str}"
-                        row.cells[cell_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                
-                # Format font size
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
-            
-            print(f"✓ Added {students.count()} student rows")
-            
-            # Pad to 40 rows total
-            empty_rows_needed = 40 - students.count()
-            for idx in range(students.count() + 1, 41):
-                row = attendance_table.add_row()
-                row.cells[0].text = str(idx)
-                row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            print(f"✓ Padded with {empty_rows_needed} empty rows")
+                # Add attendance data
+                for date_idx, date in enumerate(attendance_dates[:num_date_cols]):
+                    if date in attendance_data[student.id]:
+                        att = attendance_data[student.id][date]
+                        time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                        time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                        if time_in_str and time_out_str:
+                            attendance_table.cell(row_idx, 3 + date_idx).text = f"{time_in_str} - {time_out_str}"
+                        attendance_table.cell(row_idx, 3 + date_idx).paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Save to BytesIO buffer
+        print("✓ Document created")
+        
+        # Save to buffer
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
-        print("✓ Document saved to buffer")
         
-        # Generate filename
         filename = f"Attendance_{class_schedule.course_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         
-        # Create HTTP response
         response = HttpResponse(
             buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
-        print(f"✓ DOCX generation complete: {filename}")
+        print(f"✓ Download ready: {filename}")
         return response
         
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"✗ ERROR in generate_attendance_docx:")
-        print(error_details)
-        return HttpResponse(
-            f'<h3>Error generating DOCX</h3><p>{str(e)}</p><pre>{error_details}</pre>',
-            status=500
-        )
+        print(f"✗ ERROR: {error_details}")
+        return HttpResponse(f'<pre>Error: {str(e)}\n\n{error_details}</pre>', status=500)
+
 
 
 

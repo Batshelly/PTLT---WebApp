@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 
+
 urlpatterns = [
     path('', views.login_view, name='login'),
     path('verify-otp/', views.verify_login_otp, name='verify_login_otp'),
@@ -21,12 +22,19 @@ urlpatterns = [
     path('delete_class_schedule/<int:pk>/', views.delete_class_schedule, name='delete_class_schedule'),
     path('attendance_report_template', views.attendance_report_template, name='attendance_report_template'),
     path('create_instructor', views.create_instructor, name='create_instructor'),
-    path("set_semester", views.set_semester, name="set_semester"),
+    path("set_semester", views.set_semester, name="set_semester"),  # Keep this one
     path('auth/mobile/', views.mobile_auth, name='mobile_auth'), 
     path('force-password-change/', views.force_password_change, name='force_password_change'),
+    path('attendance/docx/<int:class_id>/', views.generate_attendance_docx_view, name='generate_attendance_docx'),
     path('import_class_pdf/', views.import_class_from_pdf, name='import_class_pdf'),
     path('api/trigger-mobile-sync/', views.trigger_mobile_sync, name='trigger_mobile_sync'),
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
+    path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
     path('attendance/docx/<int:schedule_id>/', views.generate_attendance_docx, name='generate_attendance_docx'),
+
+    
+    
+
+
 ]
