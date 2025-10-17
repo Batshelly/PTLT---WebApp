@@ -2248,7 +2248,7 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX using exact template structure with smaller font"""
+    """Generate DOCX with filename based on date range from spinboxes"""
     import logging
     logger = logging.getLogger(__name__)
     logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
@@ -2282,16 +2282,22 @@ def generate_attendance_docx(request, schedule_id):
         
         logger.error(f"✓ Found {len(students)} students")
         
-        # Get date range
+        # Get date range from spinbox values
         date_range = request.GET.get('date_range')
         start_date, end_date = None, None
+        date_range_str = ""  # For filename
+        
         if date_range:
             try:
                 start_str, end_str = date_range.split('to')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            except:
-                pass
+                # Format for filename: MMDD-MMDD
+                date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
+                logger.error(f"✓ Date range: {start_date} to {end_date}")
+            except Exception as e:
+                logger.error(f"! Error parsing date range: {str(e)}")
+                date_range_str = ""
 
         # Get attendance dates (max 8)
         if start_date and end_date:
@@ -2386,7 +2392,7 @@ def generate_attendance_docx(request, schedule_id):
                         
                         # Set font size to 8pt for all runs in the paragraph
                         for run in paragraph.runs:
-                            run.font.size = Pt(7)
+                            run.font.size = Pt(5)
 
         logger.error("✓ All placeholders replaced and font size set to 8pt")
 
@@ -2395,7 +2401,11 @@ def generate_attendance_docx(request, schedule_id):
         doc.save(buffer)
         buffer.seek(0)
 
-        filename = f"Attendance_{class_schedule.course_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        # Create filename with date range
+        # Format: Attendance_COURSECODE_MMDD-MMDD.docx
+        # Example: Attendance_CSIT201_1015-1022.docx
+        filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
+        
         logger.error(f"✓ Complete: {filename}")
 
         response = HttpResponse(
