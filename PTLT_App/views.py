@@ -2245,7 +2245,16 @@ def get_attendance_data_api(request):
         traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
-
+import logging
+logger = logging.getLogger(__name__)
+@instructor_or_admin_required
+def generate_attendance_docx(request, schedule_id):
+    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
+    try:
+        # ... rest of code
+    except Exception as e:
+        logger.error(f"DOCX ERROR: {str(e)}", exc_info=True)
+        raise
 # DOCX Generation (for download)
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
