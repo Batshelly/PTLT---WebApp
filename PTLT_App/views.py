@@ -2342,45 +2342,40 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error("✓ Placeholders replaced")
 
-        # Get attendance table (last table in document - the big attendance table)
+        # Get attendance table (last table in document)
         attendance_table = doc.tables[-1]
         
-        logger.error(f"✓ Table found with {len(attendance_table.rows)} rows")
+        logger.error(f"✓ Table found with {len(attendance_table.rows)} rows, {len(attendance_table.columns)} columns")
 
-        # Your template structure:
-        # Row 0-1: "Status" header (merged)
-        # Row 2: "Date" header (merged) 
-        # Row 3: Column headers (No., Name, Sex, dates...)
-        # Row 4+: Data rows or empty rows
-
-        # The actual column header row where we put dates is row 3 (4th row)
-        if len(attendance_table.rows) >= 4:
-            header_row = attendance_table.rows[3]
-            
-            # Fill in the date columns (starting from column index 3)
-            for idx, date in enumerate(attendance_dates[:8]):
-                col_idx = 3 + idx
-                if col_idx < len(header_row.cells):
-                    header_row.cells[col_idx].text = date.strftime('%m/%d')
-            
-            logger.error("✓ Date headers filled")
-            
-            # Remove any existing data rows (rows after row 3)
-            rows_to_remove = len(attendance_table.rows) - 4
-            if rows_to_remove > 0:
-                for _ in range(rows_to_remove):
-                    attendance_table._element.remove(attendance_table.rows[4]._element)
-                logger.error(f"✓ Removed {rows_to_remove} template rows")
-        else:
-            logger.error("✗ Template structure unexpected - creating new header row")
-            # Template doesn't have expected structure, add a header row
-            header_row = attendance_table.add_row()
+        # Your template has merged cells, we need to rebuild the table structure
+        # Clear any existing rows and rebuild from scratch
+        while len(attendance_table.rows) > 0:
+            attendance_table._element.remove(attendance_table.rows[0]._element)
+        
+        logger.error("✓ Cleared template rows, rebuilding...")
+        
+        # Add header row with proper structure
+        # We need: No. | Name | Sex | Date1 | Date2 | ... Date8
+        header_row = attendance_table.add_row()
+        
+        # Check if we have enough cells
+        if len(header_row.cells) >= 3:
             header_row.cells[0].text = 'No.'
             header_row.cells[1].text = 'Name'
-            header_row.cells[2].text = 'Sex'
+            header_row.cells[2].text = 'Sex (M/F)'
+            
+            # Add date headers
             for idx, date in enumerate(attendance_dates[:8]):
                 if 3 + idx < len(header_row.cells):
-                    header_row.cells[3 + idx].text = date.strftime('%m/%d')
+                    header_row.cells[3 + idx].text = date.strftime('%m/%d/%Y')
+            
+            # Center align and bold headers
+            for cell in header_row.cells[:3 + len(attendance_dates)]:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in cell.paragraphs[0].runs:
+                    run.bold = True
+        
+        logger.error("✓ Header row created")
 
         # Get attendance data
         attendance_qs = AttendanceRecord.objects.filter(
@@ -2402,38 +2397,40 @@ def generate_attendance_docx(request, schedule_id):
         for idx, student in enumerate(students, start=1):
             row = attendance_table.add_row()
             
-            # Number
-            row.cells[0].text = str(idx)
-            row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # Name
-            row.cells[1].text = f"{student.last_name}, {student.first_name}"
-            
-            # Sex
-            row.cells[2].text = student.sex[0] if student.sex else ''
-            row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # Attendance for each date
-            for date_idx, date in enumerate(attendance_dates[:8]):
-                col_idx = 3 + date_idx
-                if col_idx < len(row.cells):
-                    if date in attendance_data[student.id]:
-                        att = attendance_data[student.id][date]
-                        time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
-                        time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                        if time_in_str and time_out_str:
-                            row.cells[col_idx].text = f"{time_in_str} - {time_out_str}"
-                    row.cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if len(row.cells) >= 3:
+                # Number
+                row.cells[0].text = str(idx)
+                row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Name
+                row.cells[1].text = f"{student.last_name}, {student.first_name}"
+                
+                # Sex
+                row.cells[2].text = student.sex[0] if student.sex else ''
+                row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Attendance for each date
+                for date_idx, date in enumerate(attendance_dates[:8]):
+                    col_idx = 3 + date_idx
+                    if col_idx < len(row.cells):
+                        if date in attendance_data[student.id]:
+                            att = attendance_data[student.id][date]
+                            time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                            time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                            if time_in_str and time_out_str:
+                                row.cells[col_idx].text = f"{time_in_str} - {time_out_str}"
+                        row.cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         logger.error(f"✓ Added {students.count()} students")
 
-        # Pad to 40 rows
+        # Pad to 40 rows total (excluding header)
         for idx in range(students.count() + 1, 41):
             row = attendance_table.add_row()
-            row.cells[0].text = str(idx)
-            row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if len(row.cells) >= 1:
+                row.cells[0].text = str(idx)
+                row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        logger.error("✓ Table complete")
+        logger.error("✓ Table complete with 40 data rows")
 
         # Save to buffer
         buffer = BytesIO()
