@@ -2261,6 +2261,7 @@ def generate_attendance_docx(request, schedule_id):
         from collections import defaultdict
         from datetime import datetime
         from django.conf import settings
+        import re
 
         # Get date range from spinbox values - REQUIRED
         date_range = request.GET.get('date_range')
@@ -2274,21 +2275,40 @@ def generate_attendance_docx(request, schedule_id):
                 status=400
             )
         
-        # Parse date range
+        # Parse date range - handle multiple formats
         start_date, end_date = None, None
         date_range_str = ""
         
         try:
-            start_str, end_str = date_range.split('to')
-            start_date = datetime.strptime(start_str.strip(), '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_str.strip(), '%Y-%m-%d').date()
+            logger.error(f"Raw date_range received: '{date_range}'")
+            
+            # Split by 'to' and clean up
+            parts = date_range.split('to')
+            if len(parts) != 2:
+                raise ValueError("Date range must contain 'to' separator")
+            
+            start_str = parts[0].strip()
+            end_str = parts[1].strip()
+            
+            # Remove any underscores or extra characters
+            start_str = re.sub(r'[^0-9-]', '', start_str)
+            end_str = re.sub(r'[^0-9-]', '', end_str)
+            
+            logger.error(f"Cleaned start: '{start_str}', end: '{end_str}'")
+            
+            # Parse dates
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+            
             date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
-            logger.error(f"✓ Date range: {start_date} to {end_date}")
+            logger.error(f"✓ Date range parsed: {start_date} to {end_date}")
+            
         except Exception as e:
             logger.error(f"✗ Invalid date range format: {str(e)}")
             return HttpResponse(
                 '<h3>Invalid Date Range</h3>'
-                '<p>The date range format is invalid. Please select valid dates.</p>'
+                f'<p>The date range format is invalid: {str(e)}</p>'
+                f'<p>Received: {date_range}</p>'
                 '<p><a href="javascript:history.back()">Go Back</a></p>',
                 status=400
             )
