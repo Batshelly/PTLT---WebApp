@@ -50,7 +50,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .serializers import MobileClassScheduleSerializer
-
+from PTLT_App.utils import archive_semester_data
 from .models import Account
 from .models import CourseSection
 from .models import ClassSchedule
@@ -130,7 +130,19 @@ PERIODS = [
 
 @transaction.atomic 
 def login_view(request):
-    
+    # Check if any semester ended and not archived yet
+    today = timezone.now().date()
+    semester_to_archive = Semester.objects.filter(end_date__lt=today, is_archived=False).first()
+
+    if semester_to_archive:
+        print("Will archive now.")
+        # Call your archive function
+        archived_count = archive_semester_data(semester_to_archive)
+        print(f"Archived {archived_count} records.")
+    else:
+        print("No archive needed at this time.")
+
+
     # Check if any accounts exist - keep your existing default account creation
     if not Account.objects.exists():
         default_accounts = [

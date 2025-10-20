@@ -137,6 +137,7 @@ class AttendanceRecord(models.Model):
 class Semester(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
+    is_archived = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.start_date} - {self.end_date}"
@@ -149,3 +150,17 @@ class AccountUploadNotification(models.Model):
     
     class Meta:
         ordering = ['-uploaded_at']
+
+class AttendanceRecordArchive(models.Model):
+    date = models.DateField()
+    course_code = models.CharField(max_length=50)
+    course_section_name = models.CharField(max_length=150, null=True, blank=True)
+    professor_name = models.CharField(max_length=200, null=True, blank=True)
+    student_user_id = models.CharField(max_length=50, null=True, blank=True)
+    time_in = models.TimeField()
+    time_out = models.TimeField(null=True, blank=True)
+    fingerprint_data = models.BinaryField()
+    status = models.CharField(max_length=15)
+
+    def __str__(self):
+        return f"Archived: {self.date} - {self.student_user_id} - {self.status}"
