@@ -69,9 +69,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     message += 'Master data now available for mobile download:\n';
                     message += `• ${data.data.accounts_available} user accounts\n`;
                     message += `• ${data.data.schedules_available} class schedules\n\n`;
+                    message += `• ${data.data.course_sections_available} course sections\n\n`;
                     message += 'Mobile apps will:\n';
                     message += '• Replace ALL mobile accounts with server data\n';
                     message += '• Update class schedules\n\n';
+                    message += '• Update course sections\n\n';  // ← ADD THIS LINE
                     message += 'Open mobile app and press "Sync Now" to download!';
                     
                     alert(message);

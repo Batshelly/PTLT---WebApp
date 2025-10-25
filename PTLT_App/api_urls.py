@@ -6,6 +6,7 @@ router = DefaultRouter()
 router.register(r'accounts', views.AccountViewSet, basename='account')
 router.register(r'class-schedules', views.ClassScheduleViewSet, basename='class-schedule')
 router.register(r'attendance-records', views.AttendanceRecordViewSet, basename='attendance-record')
+router.register(r'course-sections', views.CourseSectionViewSet, basename='course-section')
 
 urlpatterns = [
     path('auth/login/', views.mobile_login, name='mobile_login'),
