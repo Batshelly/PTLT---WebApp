@@ -1461,14 +1461,12 @@ def class_management(request):
     recent_uploads = AccountUploadNotification.objects.filter(is_read=False)[:5]  # Last 5
     
     #update student count
-
     schedules = ClassSchedule.objects.all()
     for schedule in schedules:
         student_acc = Account.objects.filter(course_section_id=schedule.course_section_id)
         student_count = len(student_acc)
         schedule.student_count = int(student_count)
         schedule.save()
-
     # Mark as read if user clicks "Mark as Read"
     if request.GET.get('mark_read') == 'true':
         AccountUploadNotification.objects.filter(is_read=False).update(is_read=True)
@@ -1476,7 +1474,6 @@ def class_management(request):
         return redirect('class_management')
     
     course_sections = CourseSection.objects.all()
-
     if request.method == 'POST':
         course_code = request.POST.get('course_code')
         course_name = request.POST.get('course_name')
@@ -1485,12 +1482,10 @@ def class_management(request):
         day = request.POST.get('day')
         course_section_str = request.POST.get('course_section')
         remote_device = request.POST.get('remote_device')
-
         try:
             section_obj = CourseSection.objects.get(course_section=course_section_str)
         except CourseSection.DoesNotExist:
             section_obj = None
-
         ClassSchedule.objects.create(
             course_code=course_code,
             course_title=course_name,
@@ -1504,20 +1499,31 @@ def class_management(request):
             remote_device=remote_device,
             room_assignment='-',
         )
-
-    classes = ClassSchedule.objects.all()
-
+        return redirect('class_management')  # Redirect after POST to avoid resubmission
+    
+    # Pagination
+    classes_list = ClassSchedule.objects.all().order_by('-id')
+    paginator = Paginator(classes_list, 10)  # Show 10 classes per page
+    
+    page = request.GET.get('page', 1)
+    try:
+        classes = paginator.page(page)
+    except PageNotAnInteger:
+        classes = paginator.page(1)
+    except EmptyPage:
+        classes = paginator.page(paginator.num_pages)
+    
     # Get instructors only
     instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
-
+    
     return render(request, 'class_management.html', {
         "active_semester": active_semester,
         'course_sections': course_sections,
         'classes': classes,
         'instructors_json': instructors_json,
-        'new_accounts_count': new_accounts_count,  # NEW
-        'recent_uploads': recent_uploads,  # NEW
+        'new_accounts_count': new_accounts_count,
+        'recent_uploads': recent_uploads,
         'current_semester': current_semester
     })
 
