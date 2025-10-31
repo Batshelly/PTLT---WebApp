@@ -231,7 +231,7 @@
                 </div>
             </div>
         </div>
-        <button type="submit" class="btn btn-success w-100 w-md-auto">Add Subject</button>
+        <button type="submit" class="btn btn-success">Add Subject</button>
     </form>
 
     <!-- Class Assignments Table -->
@@ -281,11 +281,15 @@
     </div>
 
     <!-- Improved Pagination -->
-    {% if classes.has_other_pages %}
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mt-3 gap-2">
         <span class="text-muted">
-            Showing {{ classes.start_index }} - {{ classes.end_index }} of {{ classes.paginator.count }} result{{ classes.paginator.count|pluralize }}
+            {% if classes.paginator.count > 0 %}
+                Showing {{ classes.start_index }} - {{ classes.end_index }} of {{ classes.paginator.count }} result{{ classes.paginator.count|pluralize }}
+            {% else %}
+                No results found
+            {% endif %}
         </span>
+        {% if classes.paginator.num_pages > 1 %}
         <nav aria-label="Class pagination">
             <ul class="pagination pagination-sm mb-0">
                 {% if classes.has_previous %}
@@ -341,8 +345,8 @@
                 {% endif %}
             </ul>
         </nav>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
 <!-- Embed instructor list -->
