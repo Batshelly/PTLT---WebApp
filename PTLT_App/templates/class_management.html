@@ -225,10 +225,30 @@
     <span>
         Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}
     </span>
-    <div>
-        {% for item in page_obj %}
-        <p>{{ item }}</p>
-        {% endfor %}
+    <!-- Pagination -->
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <span>
+            {% if page_obj.paginator.count > 0 %}
+                Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}
+            {% else %}
+                No results found
+            {% endif %}
+        </span>
+        <div>
+            {% if page_obj.has_previous %}
+                <a href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.previous_page_number }}" class="btn btn-outline-secondary btn-sm">&lt;</a>
+            {% else %}
+                <button class="btn btn-outline-secondary btn-sm" disabled>&lt;</button>
+            {% endif %}
+            
+            <button class="btn btn-secondary btn-sm">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</button>
+            
+            {% if page_obj.has_next %}
+                <a href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.next_page_number }}" class="btn btn-outline-secondary btn-sm">&gt;</a>
+            {% else %}
+                <button class="btn btn-outline-secondary btn-sm" disabled>&gt;</button>
+            {% endif %}
+        </div>
     </div>
 </div>
     </div>
