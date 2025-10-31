@@ -1457,7 +1457,8 @@ import json
 @admin_required
 def class_management(request):
     today = timezone.now().date()
-    
+
+    # Get current semester
     current_semester = Semester.objects.filter(
         start_date__lte=today,
         end_date__gte=today
@@ -1467,24 +1468,24 @@ def class_management(request):
     # Get unread notifications count
     new_accounts_count = AccountUploadNotification.objects.filter(is_read=False).count()
     recent_uploads = AccountUploadNotification.objects.filter(is_read=False)[:5]  # Last 5
-    
+
     # Update student count for each class schedule
     schedules = ClassSchedule.objects.all()
     for schedule in schedules:
         student_acc = Account.objects.filter(course_section_id=schedule.course_section_id)
-        student_count = len(student_acc)
-        schedule.student_count = int(student_count)
+        schedule.student_count = student_acc.count()  # More efficient way to get count
         schedule.save()
 
-    # Mark as read if user clicks "Mark as Read"
+    # Mark notifications as read if the "Mark as Read" button is clicked
     if request.GET.get('mark_read') == 'true':
         AccountUploadNotification.objects.filter(is_read=False).update(is_read=True)
         messages.success(request, f'Marked {new_accounts_count} notifications as read.')
         return redirect('class_management')
 
+    # Get course sections
     course_sections = CourseSection.objects.all()
 
-
+    # Handle new class schedule creation
     if request.method == 'POST':
         course_code = request.POST.get('course_code')
         course_name = request.POST.get('course_name')
@@ -1494,59 +1495,55 @@ def class_management(request):
         course_section_str = request.POST.get('course_section')
         remote_device = request.POST.get('remote_device')
 
-        try:
-            section_obj = CourseSection.objects.get(course_section=course_section_str)
-        except CourseSection.DoesNotExist:
-            section_obj = None
+        # Try to get the course section, if not exist, set it to None
+        section_obj = CourseSection.objects.filter(course_section=course_section_str).first()
 
+        # Create new class schedule
         ClassSchedule.objects.create(
             course_code=course_code,
             course_title=course_name,
             time_in=time_in,
             time_out=time_out,
             days=day,
-            course_section=section_obj,
+            course_section=section_obj,  # Will be None if not found
             professor=None,
             student_count=0,
             grace_period=0,
             remote_device=remote_device,
-            room_assignment='-',
+            room_assignment='-',  # Default value
         )
 
+    # Get all class schedules for pagination
     classes = ClassSchedule.objects.all()
-
-    # Get instructors only
-    instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
-    instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
 
     # Pagination logic
     page_number = request.GET.get('page')
-    classes = ClassSchedule.objects.all()
     paginator = Paginator(classes, 10)  # 10 classes per page
     classes_page = paginator.get_page(page_number)
     
     # Build query string for pagination links
     query_params = request.GET.copy()
-    if 'page' in query_params:
-        query_params.pop('page')
+    query_params.pop('page', None)  # Remove existing page parameter if present
     query_string = query_params.urlencode()
 
     # Get instructors as JSON for front-end
     instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
 
+    # Pass context to the template
     context = {
         "active_semester": active_semester,
-        'course_sections': course_sections,
-        'classes': classes_page,
-        'instructors_json': instructors_json,
-        'new_accounts_count': new_accounts_count,  # NEW
-        'recent_uploads': recent_uploads,  # NEW
-        'current_semester': current_semester,
-        'query_string': query_string,  # For pagination
+        "course_sections": course_sections,
+        "classes": classes_page,
+        "instructors_json": instructors_json,
+        "new_accounts_count": new_accounts_count,
+        "recent_uploads": recent_uploads,
+        "current_semester": current_semester,
+        "query_string": query_string,  # For pagination
     }
 
     return render(request, 'class_management.html', context)
+
 
 
 @require_http_methods(["POST"])
