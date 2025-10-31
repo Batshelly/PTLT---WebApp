@@ -226,17 +226,11 @@
         Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}
     </span>
     <div>
-            {% if page_obj.has_previous %}
-            <a class="btn btn-outline-secondary btn-sm" href="?page=1">&laquo;</a>
-            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}">&lt;</a>
-            {% endif %}
-            <span class="btn btn-secondary btn-sm">{{ page_obj.number }}</span>
-            {% if page_obj.has_next %}
-            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.next_page_number }}">&gt;</a>
-            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.paginator.num_pages }}">&raquo;</a>
-            {% endif %}
-        </div>
+        {% for item in page_obj %}
+        <p>{{ item }}</p>
+        {% endfor %}
     </div>
+</div>
     </div>
 </div>
 
