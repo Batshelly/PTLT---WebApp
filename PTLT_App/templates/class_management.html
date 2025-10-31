@@ -32,7 +32,6 @@
             <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
 
             <button id="syncToMobileBtn" class="btn btn-success ms-2 custom-btn">Sync to Mobile App</button>
-
             <!-- Notification Alert for New Account Uploads -->
             {% if new_accounts_count > 0 %}
             <div class="alert alert-info alert-dismissible fade show d-flex justify-content-between align-items-center mt-3" role="alert">
@@ -59,7 +58,6 @@
                 </div>
             </div>
             {% endif %}
-
             {% if messages %}
                 {% for message in messages %}
                     {% if "semester" in message.tags %}
@@ -115,6 +113,8 @@
                 </form>
             {% endif %}
         </div>
+
+
     </div>
 
     <div class="container py-3 bg-white shadow rounded-4 p-4">
@@ -162,6 +162,7 @@
                         <option>Saturday</option>
                     </select>
                 </div>
+                <!-- Replace the existing Program & Section div with this -->
                 <div class="col-md-4">
                     <label class="form-label">Program & Section:</label>
                     <div class="d-flex gap-2">
@@ -219,26 +220,13 @@
                 </tbody>
             </table>
         </div>
-
         <!-- Pagination -->
         <div class="d-flex justify-content-between align-items-center mt-3">
-            <span>
-                Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}
-            </span>
+            <span>Showing 1 result</span>
             <div>
-                {% if page_obj.has_previous %}
-                    <a href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.previous_page_number }}" class="btn btn-outline-secondary btn-sm">&lt;</a>
-                {% else %}
-                    <button class="btn btn-outline-secondary btn-sm" disabled>&lt;</button>
-                {% endif %}
-                
-                <button class="btn btn-secondary btn-sm">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</button>
-                
-                {% if page_obj.has_next %}
-                    <a href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.next_page_number }}" class="btn btn-outline-secondary btn-sm">&gt;</a>
-                {% else %}
-                    <button class="btn btn-outline-secondary btn-sm" disabled>&gt;</button>
-                {% endif %}
+                <button class="btn btn-outline-secondary btn-sm">&lt;</button>
+                <button class="btn btn-secondary btn-sm">1</button>
+                <button class="btn btn-outline-secondary btn-sm">&gt;</button>
             </div>
         </div>
     </div>
@@ -281,6 +269,51 @@
         </div>
     </div>
 </div>
-
 </body>
-</html>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const addSectionModalEl = document.getElementById('addSectionModal');
+  if (!addSectionModalEl) return;
+
+  let addSectionModalInstance = null;
+
+  function getAddSectionModalInstance() {
+    if (!addSectionModalInstance) {
+      addSectionModalInstance = new bootstrap.Modal(addSectionModalEl, {
+        keyboard: true,
+        backdrop: true
+      });
+    }
+    return addSectionModalInstance;
+  }
+
+  function cleanupModalBackdrops() {
+    // Remove any lingering modal backdrops
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops.forEach(backdrop => backdrop.remove());
+
+    // Restore body scrolling and padding
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+  }
+
+  addSectionModalEl.addEventListener('hidden.bs.modal', function () {
+    cleanupModalBackdrops();
+
+    // Optional: reset form inputs on modal close
+    const form = addSectionModalEl.querySelector('form');
+    if (form) form.reset();
+  });
+
+  addSectionModalEl.addEventListener('hide.bs.modal', function () {
+    setTimeout(cleanupModalBackdrops, 100);
+  });
+
+  // Example usage: If you want to programmatically open the modal
+  // document.getElementById('openAddSectionBtn').addEventListener('click', () => {
+  //   getAddSectionModalInstance().show();
+  // });
+});
+</script>
+{% endblock %}
