@@ -222,13 +222,21 @@
         </div>
         <!-- Pagination -->
         <div class="d-flex justify-content-between align-items-center mt-3">
-            <span>Showing 1 result</span>
-            <div>
-                <button class="btn btn-outline-secondary btn-sm">&lt;</button>
-                <button class="btn btn-secondary btn-sm">1</button>
-                <button class="btn btn-outline-secondary btn-sm">&gt;</button>
-            </div>
+    <span>
+        Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}
+    </span>
+    <div>
+            {% if page_obj.has_previous %}
+            <a class="btn btn-outline-secondary btn-sm" href="?page=1">&laquo;</a>
+            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}">&lt;</a>
+            {% endif %}
+            <span class="btn btn-secondary btn-sm">{{ page_obj.number }}</span>
+            {% if page_obj.has_next %}
+            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.next_page_number }}">&gt;</a>
+            <a class="btn btn-outline-secondary btn-sm" href="?page={{ page_obj.paginator.num_pages }}">&raquo;</a>
+            {% endif %}
         </div>
+    </div>
     </div>
 </div>
 
