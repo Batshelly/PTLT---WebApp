@@ -139,8 +139,17 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email backend
-EMAIL_BACKEND = 'PTLT.email_backend.ResendEmailBackend'
-DEFAULT_FROM_EMAIL = 'noreply@tupc-ptlt.online'
+#EMAIL_BACKEND = 'PTLT.email_backend.ResendEmailBackend'
+#DEFAULT_FROM_EMAIL = 'noreply@tupc-ptlt.online'
+# Email Configuration - Gmail SMTP
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'tupcptlt@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'jyecfofembkrxjfg')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'tupcptlt@gmail.com')
+
 
 # REST Framework
 REST_FRAMEWORK = { 

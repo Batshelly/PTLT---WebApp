@@ -64,8 +64,9 @@ from django.utils.dateparse import parse_date
 
 from .serializers import (
     AccountSerializer, ClassScheduleSerializer, AttendanceRecordSerializer,
-    MobileAccountSerializer, MobileAttendanceSerializer
+    MobileAccountSerializer, MobileAttendanceSerializer, CourseSectionSerializer  
 )
+
 
 # for docx file
 from docxtpl import DocxTemplate
@@ -1932,13 +1933,15 @@ def trigger_mobile_sync(request):
         # Get counts of data available for sync
         account_count = Account.objects.count()
         schedule_count = ClassSchedule.objects.count()
+        course_section_count = CourseSection.objects.count()
         
         return JsonResponse({
             'status': 'success',
             'message': 'Mobile sync triggered successfully',
             'data': {
                 'accounts_available': account_count,
-                'schedules_available': schedule_count
+                'schedules_available': schedule_count,
+                'course_sections_available': course_section_count
             }
         })
         
@@ -2012,6 +2015,20 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
         serializer = MobileAttendanceSerializer(records, many=True)
         return Response(serializer.data)
 
+
+class CourseSectionViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for course sections - allows mobile app to fetch all course sections
+    """
+    queryset = CourseSection.objects.all()
+    serializer_class = CourseSectionSerializer
+    
+    def get_permissions(self):
+        """Allow read without auth for mobile sync"""
+        if self.action in ['list', 'retrieve']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+    
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def mobile_login(request):

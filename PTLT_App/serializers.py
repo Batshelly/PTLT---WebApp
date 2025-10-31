@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Account, ClassSchedule, AttendanceRecord
+from .models import Account, ClassSchedule, AttendanceRecord, CourseSection
 
 class AccountSerializer(serializers.ModelSerializer):
     class Meta:
@@ -29,21 +29,47 @@ class MobileAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = ['user_id', 'email', 'first_name', 'last_name', 'role', 'sex', 'status']
-        
 class MobileClassScheduleSerializer(serializers.ModelSerializer):
     professor_user_id = serializers.SerializerMethodField()
+    course_section_id = serializers.SerializerMethodField()  # ← ADD THIS
+    course_section_label = serializers.SerializerMethodField()  # ← ADD THIS
     
     class Meta:
         model = ClassSchedule
-        fields = ['id', 'course_title', 'course_code', 'course_section', 'time_in', 'time_out', 
-                 'days', 'grace_period', 'student_count', 'remote_device', 'room_assignment', 
-                 'professor_user_id']
+        fields = [
+            'id', 
+            'course_title', 
+            'course_code', 
+            'course_section_id',  # ← CHANGED: Use explicit ID field
+            'course_section_label',  # ← ADD: Use explicit label field
+            'time_in', 
+            'time_out', 
+            'days', 
+            'grace_period', 
+            'student_count', 
+            'remote_device', 
+            'room_assignment', 
+            'professor_user_id'
+        ]
     
     def get_professor_user_id(self, obj):
         """Return the professor's user_id string, not the FK id"""
         if obj.professor:
             return obj.professor.user_id  # Returns "220135211", not 5
         return None
+    
+    def get_course_section_id(self, obj):
+        """Return the CourseSection primary key ID (numeric)"""
+        if obj.course_section:
+            return obj.course_section.id  # Returns 8
+        return None
+    
+    def get_course_section_label(self, obj):
+        """Return the CourseSection display label from CourseSection table"""
+        if obj.course_section:
+            return obj.course_section.course_section  # Returns "BET-COET 4A"
+        return None
+
 class MobileAttendanceSerializer(serializers.ModelSerializer):
     # Override these fields to accept user_id strings instead of primary keys
     student = serializers.CharField()
@@ -81,3 +107,9 @@ class MobileAttendanceSerializer(serializers.ModelSerializer):
         representation['student'] = instance.student.user_id
         representation['professor'] = instance.professor.user_id
         return representation
+    
+class CourseSectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CourseSection
+        fields = ['id', 'course_name', 'section_name', 'course_section']
+
