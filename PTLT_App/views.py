@@ -1445,9 +1445,17 @@ def import_class_from_pdf(request):
             'message': f'Failed to parse PDF: {str(e)}'
         }, status=500)
         
+from django.core.paginator import Paginator
+from django.db.models import Q
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.utils import timezone
+from django.http import JsonResponse
+from django.template.loader import render_to_string
+import json
+
 @admin_required
 def class_management(request):
-    
     today = timezone.now().date()
     
     current_semester = Semester.objects.filter(
@@ -1460,8 +1468,7 @@ def class_management(request):
     new_accounts_count = AccountUploadNotification.objects.filter(is_read=False).count()
     recent_uploads = AccountUploadNotification.objects.filter(is_read=False)[:5]  # Last 5
     
-    #update student count
-
+    # Update student count for each class schedule
     schedules = ClassSchedule.objects.all()
     for schedule in schedules:
         student_acc = Account.objects.filter(course_section_id=schedule.course_section_id)
@@ -1474,8 +1481,9 @@ def class_management(request):
         AccountUploadNotification.objects.filter(is_read=False).update(is_read=True)
         messages.success(request, f'Marked {new_accounts_count} notifications as read.')
         return redirect('class_management')
-    
+
     course_sections = CourseSection.objects.all()
+
 
     if request.method == 'POST':
         course_code = request.POST.get('course_code')
@@ -1511,15 +1519,35 @@ def class_management(request):
     instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
 
-    return render(request, 'class_management.html', {
+    # Pagination logic
+    page_number = request.GET.get('page')
+    classes = ClassSchedule.objects.all()
+    paginator = Paginator(classes, 10)  # 10 classes per page
+    classes_page = paginator.get_page(page_number)
+    
+    # Build query string for pagination links
+    query_params = request.GET.copy()
+    if 'page' in query_params:
+        query_params.pop('page')
+    query_string = query_params.urlencode()
+
+    # Get instructors as JSON for front-end
+    instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
+    instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
+
+    context = {
         "active_semester": active_semester,
         'course_sections': course_sections,
-        'classes': classes,
+        'classes': classes_page,
         'instructors_json': instructors_json,
         'new_accounts_count': new_accounts_count,  # NEW
         'recent_uploads': recent_uploads,  # NEW
-        'current_semester': current_semester
-    })
+        'current_semester': current_semester,
+        'query_string': query_string,  # For pagination
+    }
+
+    return render(request, 'class_management.html', context)
+
 
 @require_http_methods(["POST"])
 @admin_required
