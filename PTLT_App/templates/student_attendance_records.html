@@ -2,6 +2,126 @@
 {% load static %}
 
 {% block content %}
+<!-- Custom CSS for this page only -->
+<link rel="stylesheet" href="{% static 'css/schedule.css' %}">
+
+<!-- FullCalendar CSS -->
+<link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css' rel='stylesheet' />
+
+<style>
+    /* CRITICAL: Prevent any horizontal overflow */
+    * {
+        box-sizing: border-box;
+    }
+    
+    body, html {
+        overflow-x: hidden !important;
+        width: 100%;
+        max-width: 100vw;
+    }
+    
+    /* Prevent containers from overflowing */
+    .container, .container-fluid {
+        max-width: 100% !important;
+        overflow-x: hidden;
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    /* Force FullCalendar to respect container width */
+    #schedule-overview {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    #calendar {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    .fc {
+        max-width: 100% !important;
+        overflow: hidden;
+    }
+    
+    .fc-view-harness {
+        overflow-x: auto !important;
+        overflow-y: hidden;
+    }
+    
+    /* Make table scrollable horizontally */
+    .table-responsive {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        display: block;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    /* Mobile specific styles */
+    @media (max-width: 768px) {
+        body {
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        
+        .container-fluid {
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }
+        
+        #schedule-overview,
+        #schedule-overview > div {
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }
+        
+        .table {
+            min-width: 700px;
+            font-size: 0.8rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.4rem;
+            white-space: nowrap;
+        }
+        
+        .btn-sm {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        /* FullCalendar mobile adjustments */
+        .fc-toolbar {
+            flex-direction: column !important;
+            gap: 10px;
+        }
+        
+        .fc-toolbar-chunk {
+            display: flex;
+            justify-content: center;
+        }
+        
+        .fc-button {
+            font-size: 0.75rem !important;
+            padding: 0.25rem 0.5rem !important;
+        }
+        
+        .fc-toolbar-title {
+            font-size: 1rem !important;
+        }
+        
+        .fc-daygrid-day-number {
+            font-size: 0.8rem;
+        }
+        
+        .fc-col-header-cell-cushion {
+            font-size: 0.75rem;
+        }
+    }
+</style>
+
 <body>
 <div class="bg-white p-4 mx-auto shadow-sm rounded">
     <div class="container-fluid py-4">
