@@ -71,23 +71,6 @@
         <h3 class="mb-0 text-decoration-underline">Set Semester</h3>
         <h3 class="mt-3 mb-4">Semester Period</h3>
 
-        <!-- Button Group with responsive layout -->
-        <div class="btn-group-mobile d-md-flex d-block mb-3">
-            <button id="importClassBtn" class="btn btn-primary custom-btn">
-                <i class="bi bi-upload"></i> Import Class
-            </button>
-            <input type="file" id="fileInput" accept=".csv" style="display:none">
-            
-            <button id="importClassPdfBtn" class="btn btn-info ms-md-2">
-                <i class="bi bi-file-pdf"></i> Import from PDF
-            </button>
-            <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
-
-            <button id="syncToMobileBtn" class="btn btn-success ms-md-2 custom-btn">
-                <i class="bi bi-arrow-repeat"></i> Sync to Mobile App
-            </button>
-        </div>
-
         <!-- Notification Alert -->
         {% if new_accounts_count > 0 %}
         <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
@@ -174,6 +157,22 @@
 
 <div class="container py-3 bg-white shadow rounded-4 p-md-4 p-3">
     <h3 class="mb-0 text-decoration-underline">Class Management</h3>
+    <!-- Button Group with responsive layout -->
+        <div class="btn-group-mobile d-md-flex d-block mb-3">
+            <button id="importClassBtn" class="btn btn-primary custom-btn">
+                <i class="bi bi-upload"></i> Import Class
+            </button>
+            <input type="file" id="fileInput" accept=".csv" style="display:none">
+            
+            <button id="importClassPdfBtn" class="btn btn-info ms-md-2">
+                <i class="bi bi-file-pdf"></i> Import from PDF
+            </button>
+            <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+
+            <button id="syncToMobileBtn" class="btn btn-success ms-md-2 custom-btn">
+                <i class="bi bi-arrow-repeat"></i> Sync to Mobile App
+            </button>
+        </div>
     <h3 class="mt-3 mb-4">Create Subject</h3>
     
     <form id="createSubjectForm" method="POST">
