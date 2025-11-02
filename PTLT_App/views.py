@@ -931,7 +931,7 @@ def instructor_schedule(request):
 def account_management(request):
     role_filter = request.GET.get('role', '')
     status_filter = request.GET.get('status', '')
-    course_filter = request.GET.get('course', '') 
+    course_filter = request.GET.get('course', '')
     search_query = request.GET.get('search', '')
     
     accounts = Account.objects.all()
@@ -940,17 +940,20 @@ def account_management(request):
         accounts = accounts.filter(role__iexact=role_filter)
     if status_filter:
         accounts = accounts.filter(status__iexact=status_filter)
-    if course_filter: 
+    if course_filter:
         accounts = accounts.filter(course_section__course_section=course_filter)
     if search_query:
         accounts = accounts.filter(
             Q(first_name__icontains=search_query) | Q(last_name__icontains=search_query)
         )
     
+    # Order the accounts
     accounts = accounts.order_by('user_id')
     
+    # Get all course sections for dropdown
     course_sections = CourseSection.objects.all().order_by('course_section')
     
+    # Add pagination - 10 accounts per page
     paginator = Paginator(accounts, 10)
     page_number = request.GET.get('page')
     accounts_page = paginator.get_page(page_number)
@@ -958,7 +961,8 @@ def account_management(request):
     update_notifications = AccountUploadNotification.objects.filter(is_read=False, notification_type='update')
     update_count = update_notifications.count()
     recent_updates = update_notifications[:5]
-
+    
+    # Mark updates as read if requested
     if request.GET.get('mark_updates_read') == 'true':
         AccountUploadNotification.objects.filter(is_read=False, notification_type='update').update(is_read=True)
         messages.success(request, f'Marked {update_count} notifications as read.')
@@ -968,6 +972,7 @@ def account_management(request):
         html = render_to_string('partials/account_table_body.html', {'accounts': accounts_page})
         return JsonResponse({'html': html})
     
+    # Build query string for pagination links
     query_params = request.GET.copy()
     if 'page' in query_params:
         query_params.pop('page')
@@ -978,6 +983,10 @@ def account_management(request):
         'update_count': update_count,
         'query_string': query_string,
         'course_sections': course_sections,
+        'role_filter': role_filter,         
+        'status_filter': status_filter,     
+        'course_filter': course_filter,     
+        'search_query': search_query,       
     }
     return render(request, 'account_management.html', context)
 

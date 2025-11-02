@@ -160,19 +160,19 @@
             <div class="col-md-4 col-12">
                 <label for="role" class="form-label">Role:</label>
                 <select id="role" class="form-select">
-                    <option value="">Select</option>
-                    <option value="Instructor">Instructor</option>
-                    <option value="Student">Student</option>
-                    <option value="Admin">Admin</option>
+                    <option value="">Show All</option>
+                    <option value="Instructor" {% if role_filter == 'Instructor' %}selected{% endif %}>Instructor</option>
+                    <option value="Student" {% if role_filter == 'Student' %}selected{% endif %}>Student</option>
+                    <option value="Admin" {% if role_filter == 'Admin' %}selected{% endif %}>Admin</option>
                 </select>
             </div>
             <div class="col-md-4 col-12">
                 <label for="status" class="form-label">Status:</label>
                 <select id="status" class="form-select">
-                    <option value="">Select</option>
-                    <option value="Active">Active</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Inactive">Inactive</option>
+                    <option value="">Show All</option>
+                    <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                    <option value="Pending" {% if status_filter == 'Pending' %}selected{% endif %}>Pending</option>
+                    <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
                 </select>
             </div>
             <div class="col-md-4 col-12">
@@ -180,7 +180,7 @@
                 <select id="course" class="form-select">
                     <option value="">Show All</option>
                     {% for course in course_sections %}
-                        <option value="{{ course.course_section }}">{{ course.course_section }}</option>
+                        <option value="{{ course.course_section }}" {% if course_filter == course.course_section %}selected{% endif %}>{{ course.course_section }}</option>
                     {% endfor %}
                 </select>
             </div>
