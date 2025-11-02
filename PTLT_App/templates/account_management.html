@@ -179,7 +179,9 @@
                 <label for="course" class="form-label">Course/Year/Section:</label>
                 <select id="course" class="form-select">
                     <option value="">Select</option>
-                    <option value="bsit3a">BSIT 3A</option>
+                    {% for course in course_sections %}
+                        <option value="{{ course.course_section }}">{{ course.course_section }}</option>
+                    {% endfor %}
                 </select>
             </div>
         </div>
@@ -195,6 +197,7 @@
                         <th>Last Name</th>
                         <th>Role</th>
                         <th>Email</th>
+                        <th>Course/Section</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -207,6 +210,13 @@
                         <td class="editable last_name">{{ account.last_name }}</td>
                         <td class="editable role">{{ account.role }}</td>
                         <td class="editable email">{{ account.email }}</td>
+                        <td class="editable course_section">
+                            {% if account.course_section %}
+                                {{ account.course_section.course_section }}
+                            {% else %}
+                                <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
                         <td><span class="badge bg-success">Active</span></td>
                         <td>
                             <div class="action-buttons">
@@ -225,7 +235,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center">No accounts found</td>
+                        <td colspan="8" class="text-center">No accounts found</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -329,6 +339,36 @@
     </div>
 </div>
 
+<script>
+// Course filter functionality
+document.getElementById('course').addEventListener('change', function() {
+    const role = document.getElementById('role').value;
+    const status = document.getElementById('status').value;
+    const course = this.value;
+    const search = document.getElementById('search-input').value;
+    
+    const params = new URLSearchParams(window.location.search);
+    
+    // Update or remove parameters
+    if (role) params.set('role', role);
+    else params.delete('role');
+    
+    if (status) params.set('status', status);
+    else params.delete('status');
+    
+    if (course) params.set('course', course);
+    else params.delete('course');
+    
+    if (search) params.set('search', search);
+    else params.delete('search');
+    
+    // Remove page parameter to reset to first page
+    params.delete('page');
+    
+    // Redirect with new parameters
+    window.location.href = '?' + params.toString();
+});
+</script>
 </body>
 
 {% endblock %}
