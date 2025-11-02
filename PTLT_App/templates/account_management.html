@@ -178,7 +178,7 @@
             <div class="col-md-4 col-12">
                 <label for="course" class="form-label">Course/Year/Section:</label>
                 <select id="course" class="form-select">
-                    <option value="">Select</option>
+                    <option value="">Show All</option>
                     {% for course in course_sections %}
                         <option value="{{ course.course_section }}">{{ course.course_section }}</option>
                     {% endfor %}
