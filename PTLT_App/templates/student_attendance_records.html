@@ -308,7 +308,224 @@ function initEmptyTable() {
 initEmptyTable();
 updateDownloadButton();
 
-/* other JS code stays exactly as you provided */
+// Subject change
+document.getElementById('subjectSelect').addEventListener('change', function() {
+    selectedClassId = this.value;
+    selectedDateRange = null;
+    
+    if (!selectedClassId) {
+        document.getElementById('dateRangeSelect').disabled = true;
+        document.getElementById('dateRangeSelect').innerHTML = '<option value="">-- Select Date Range --</option>';
+        updateDownloadButton();
+        clearTable();
+        return;
+    }
+    
+    fetch(`/api/attendance_data/?schedule=${selectedClassId}`)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('classSubject').textContent = data.class_data.subject;
+            document.getElementById('classFaculty').textContent = data.class_data.faculty_name;
+            document.getElementById('classCourse').textContent = data.class_data.course;
+            document.getElementById('classRoom').textContent = data.class_data.room;
+            document.getElementById('classSection').textContent = data.class_data.year_section;
+            document.getElementById('classSchedule').textContent = data.class_data.schedule;
+            
+            let dateHtml = '<option value="">-- Select Date Range --</option>';
+            data.date_ranges.forEach(dr => {
+                dateHtml += `<option value="${dr.value}">${dr.label}</option>`;
+            });
+            document.getElementById('dateRangeSelect').innerHTML = dateHtml;
+            document.getElementById('dateRangeSelect').disabled = data.date_ranges.length === 0;
+            
+            updateDownloadButton();
+            
+            if (data.date_ranges.length === 0) {
+                document.getElementById('noRecordsMsg').style.display = 'block';
+            } else {
+                document.getElementById('noRecordsMsg').style.display = 'none';
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Error loading class data');
+        });
+});
+
+// Date range change
+document.getElementById('dateRangeSelect').addEventListener('change', function() {
+    selectedDateRange = this.value;
+    updateDownloadButton();
+    
+    if (!selectedDateRange || !selectedClassId) return;
+    
+    fetch(`/api/attendance_data/?schedule=${selectedClassId}&date_range=${selectedDateRange}`)
+        .then(r => r.json())
+        .then(data => {
+            let headerHtml = '';
+            for(let i = 0; i < 8; i++) {
+                headerHtml += `<th class="border border-dark">${data.date_headers[i] || ''}</th>`;
+            }
+            document.getElementById('dateHeaderRow').innerHTML = headerHtml;
+            
+            let tableHtml = '';
+            data.attendance_table.forEach((student, idx) => {
+                tableHtml += `<tr class="border border-dark">
+                    <td class="border border-dark">${idx+1}</td>
+                    <td class="border border-dark">${student.name}</td>
+                    <td class="border border-dark">${student.sex}</td>`;
+                
+                for(let i = 0; i < 8; i++) {
+                    if (student.dates[i] && student.dates[i].time_in && student.dates[i].time_out) {
+                        tableHtml += `<td class="border border-dark">${student.dates[i].time_in} - ${student.dates[i].time_out}</td>`;
+                    } else {
+                        tableHtml += `<td class="border border-dark">&nbsp;</td>`;
+                    }
+                }
+                tableHtml += `</tr>`;
+            });
+            
+            for(let i = data.attendance_table.length; i < 40; i++) {
+                tableHtml += `<tr class="border border-dark">
+                    <td class="border border-dark">${i+1}</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                    <td class="border border-dark">&nbsp;</td>
+                </tr>`;
+            }
+            
+            document.getElementById('attendanceTableBody').innerHTML = tableHtml;
+            
+            if (data.student_count > 0) {
+                document.getElementById('studentCount').innerHTML = `<small class="text-muted">Showing ${data.student_count} students</small>`;
+                document.getElementById('studentCount').style.display = 'block';
+            }
+        });
+});
+
+function clearTable() {
+    document.getElementById('classSubject').textContent = '[Subject]';
+    document.getElementById('classFaculty').textContent = '[Faculty]';
+    document.getElementById('classCourse').textContent = '[Course]';
+    document.getElementById('classRoom').textContent = '[Room]';
+    document.getElementById('classSection').textContent = '[Section]';
+    document.getElementById('classSchedule').textContent = '[Schedule]';
+    document.getElementById('dateHeaderRow').innerHTML = '<th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>';
+    initEmptyTable();
+    document.getElementById('noRecordsMsg').style.display = 'none';
+    document.getElementById('studentCount').style.display = 'none';
+}
+
+function downloadDocx() {
+    if (!selectedClassId || !selectedDateRange) { 
+        alert('Please select both a class and date range first!'); 
+        return; 
+    }
+    
+    // Show loading indicator
+    const downloadBtn = document.getElementById('downloadBtn');
+    const originalHtml = downloadBtn.innerHTML;
+    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Downloading...';
+    downloadBtn.disabled = true;
+    
+    let url = `/attendance/docx/${selectedClassId}/`;
+    if (selectedDateRange) {
+        url += `?date_range=${selectedDateRange}`;
+    }
+    
+    // Use fetch for better control
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error('Download failed');
+            return response.blob();
+        })
+        .then(blob => {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `Attendance_${selectedClassId}_${selectedDateRange}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+            
+            // Reset button
+            downloadBtn.innerHTML = originalHtml;
+            downloadBtn.disabled = false;
+        })
+        .catch(err => {
+            console.error('Download error:', err);
+            alert('Download failed. Please try again.');
+            downloadBtn.innerHTML = originalHtml;
+            downloadBtn.disabled = false;
+        });
+}
+
+
+// CSV Upload
+document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const csvFile = document.getElementById('csvFile').files[0];
+    if (!csvFile) { alert('Select a file'); return; }
+    
+    const formData = new FormData();
+    formData.append('csv_file', csvFile);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    const resultsDiv = document.getElementById('uploadResults');
+    resultsDiv.style.display = 'block';
+    resultsDiv.querySelector('.alert').className = 'alert alert-info';
+    resultsDiv.querySelector('.alert h6').textContent = '⏳ Uploading...';
+    
+    fetch('/import_class_schedule/', {
+        method: 'POST',
+        body: formData,
+        headers: {'X-CSRFToken': csrfToken},
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('importedCount').textContent = data.imported || 0;
+        document.getElementById('skippedCount').textContent = data.skipped || 0;
+        
+        const errorsList = document.getElementById('errorsList');
+        errorsList.innerHTML = '';
+        if (data.errors && data.errors.length > 0) {
+            errorsList.innerHTML = '<strong class="text-danger">Errors:</strong><ul>';
+            data.errors.forEach(err => { errorsList.innerHTML += `<li>${err}</li>`; });
+            errorsList.innerHTML += '</ul>';
+        }
+        
+        const alertDiv = resultsDiv.querySelector('.alert');
+        if (data.status === 'ok') {
+            alertDiv.className = 'alert alert-success';
+            resultsDiv.querySelector('.alert h6').textContent = '✅ Success!';
+        } else if (data.status === 'partial') {
+            alertDiv.className = 'alert alert-warning';
+            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial';
+        } else {
+            alertDiv.className = 'alert alert-danger';
+            resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+        }
+        
+        if (data.imported > 0) {
+            document.getElementById('csvUploadForm').reset();
+            setTimeout(() => location.reload(), 2000);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        resultsDiv.querySelector('.alert').className = 'alert alert-danger';
+        resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+    });
+});
 </script>
 </body>
 {% endblock %}
