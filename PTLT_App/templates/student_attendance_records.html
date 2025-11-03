@@ -1,6 +1,17 @@
 {% extends "inst_navbar.html" %}
 {% load static %}
 
+{% block help_images_script %}
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/Instructor-StuAttedanceRec-1.PNG' %}",
+        "{% static 'image/Instructor-StuAttedanceRec-2.PNG' %}"
+    ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <!-- Custom CSS for this page only -->
 <link rel="stylesheet" href="{% static 'css/schedule.css' %}">
@@ -122,7 +133,7 @@
     }
 </style>
 
-<body>
+
 <div class="bg-white p-4 mx-auto shadow-sm rounded">
     <div class="container-fluid py-4">
         <!-- TOP ROW -->
@@ -136,7 +147,7 @@
                     <i class="bi bi-download"></i> Download DOCX
                 </button>
                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
-                    <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
+                    <i class="bi bi-file-earmark-spreadsheet p4"></i> Import CSV
                 </button>
             </div>
         </div>
@@ -429,7 +440,6 @@ function downloadDocx() {
         return; 
     }
     
-    // Show loading indicator
     const downloadBtn = document.getElementById('downloadBtn');
     const originalHtml = downloadBtn.innerHTML;
     downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Downloading...';
@@ -440,7 +450,6 @@ function downloadDocx() {
         url += `?date_range=${selectedDateRange}`;
     }
     
-    // Use fetch for better control
     fetch(url)
         .then(response => {
             if (!response.ok) throw new Error('Download failed');
@@ -456,7 +465,6 @@ function downloadDocx() {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(downloadUrl);
             
-            // Reset button
             downloadBtn.innerHTML = originalHtml;
             downloadBtn.disabled = false;
         })
@@ -467,7 +475,6 @@ function downloadDocx() {
             downloadBtn.disabled = false;
         });
 }
-
 
 // CSV Upload
 document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
@@ -527,5 +534,4 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
     });
 });
 </script>
-</body>
 {% endblock %}
