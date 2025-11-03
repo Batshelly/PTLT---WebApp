@@ -2,6 +2,17 @@
 {% load static %}
 {% load schedule_tags %}
 
+{% block help_images_script %}
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/Instructor-Schedule-1.png' %}",
+        "{% static 'image/Instructor-Schedule-2.png' %}"
+    ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <!-- Custom CSS for this page only -->
 <link rel="stylesheet" href="{% static 'css/schedule.css' %}">
@@ -245,35 +256,6 @@
             </table>    
         </div>
     </div>
-</div>
-
-<!-- JSON block to pass image URLs to JS -->
-<script id="help-data" type="application/json">
-{
-    "steps": [
-        "{% static 'image/instructorSchedule1.png' %}",
-        "{% static 'image/instructorSchedule2.png' %}"
-    ]
-}
-</script>
-
-<!-- Modal -->
-<div class="modal fade" id="helpGuideModal" tabindex="-1" aria-labelledby="helpGuideLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content shadow">
-      <div class="modal-header bg-info text-white">
-        <h5 class="modal-title" id="helpGuideLabel">Help Guide</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body d-flex justify-content-center" id="helpSlide">
-        <img id="helpImage" src="" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
-      </div>
-      <div class="modal-footer d-flex justify-content-between">
-        <button id="prevHelp" class="btn btn-secondary">Previous</button>
-        <button id="nextHelp" class="btn btn-primary">Next</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- Scripts -->

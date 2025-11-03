@@ -12,7 +12,6 @@
 </head>
 <body class="d-flex flex-column min-vh-100">
 
-
 <!-- Instructor Top Navigation Bar -->
 <div class="d-flex justify-content-between align-items-center mb-3 nav_top">
     <div class="d-flex align-items-center nav_links">
@@ -23,13 +22,11 @@
         </nav>
     </div>
 
-
     <div class="d-flex align-items-center gap-3 pe-3">
         <button id="helpBtn" class="btn btn-outline-info" type="button">Need Help?</button>
         <a href="{% url 'logout' %}" class="btn btn-outline-danger logout_btn">Logout</a>
     </div>
 </div>
-
 
 <div class="modal fade" id="helpGuideModal" tabindex="-1" aria-labelledby="helpGuideLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -39,7 +36,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body d-flex justify-content-center" id="helpSlide">
-        <img id="helpImage" src="{% static 'image/attendance_records_inst.png' %}" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
+        <img id="helpImage" src="" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" /> 🔄 CHANGE: REMOVED DEFAULT SRC
       </div>
       <div class="modal-footer d-flex justify-content-between">
         <button id="prevHelp" class="btn btn-secondary">Previous</button>
@@ -49,25 +46,37 @@
   </div>
 </div>
 
+✨ ADD: NEW BLOCK FOR PAGE-SPECIFIC HELP IMAGES
+{% block help_images_script %}
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/attendance_records_inst.png' %}",
+        "{% static 'image/schedule_inst.png' %}"
+    ]
+}
+</script>
+{% endblock %}
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const helpImage = document.getElementById("helpImage");
     const helpModal = document.getElementById("helpGuideModal");
-    const helpSteps = [
-      "{% static 'image/attendance_records_inst.png' %}",
-      "{% static 'image/schedule_inst.png' %}"
-    ];
-
+    
+  
+    const helpDataEl = document.getElementById("help-data");
+    const helpData = helpDataEl ? JSON.parse(helpDataEl.textContent) : { steps: [] };
+    const helpSteps = helpData.steps;
 
     let currentStep = 0;
     let modalInstance = null;
 
-
     function updateImage() {
-      helpImage.src = helpSteps[currentStep];
+      
+      if (helpSteps.length > 0) {
+        helpImage.src = helpSteps[currentStep];
+      }
     }
-
 
     // Create modal instance only once
     function getModalInstance() {
@@ -79,7 +88,6 @@
       }
       return modalInstance;
     }
-
 
     // Clean up function to ensure backdrop is removed
     function cleanupModal() {
@@ -93,14 +101,12 @@
       document.body.style.paddingRight = '';
     }
 
-
     document.getElementById("prevHelp").addEventListener("click", function () {
       if (currentStep > 0) {
         currentStep--;
         updateImage();
       }
     });
-
 
     document.getElementById("nextHelp").addEventListener("click", function () {
       if (currentStep < helpSteps.length - 1) {
@@ -109,12 +115,12 @@
       }
     });
 
-
     document.getElementById("helpBtn").addEventListener("click", function () {
+      
+      updateImage();
       const modal = getModalInstance();
       modal.show();
     });
-
 
     // Add event listeners for modal close events
     helpModal.addEventListener('hidden.bs.modal', function () {
@@ -123,12 +129,10 @@
       updateImage();
     });
 
-
     // Additional safety cleanup for the close button
     helpModal.addEventListener('hide.bs.modal', function () {
       setTimeout(cleanupModal, 100); // Small delay to ensure Bootstrap finishes
     });
-
 
     // Force cleanup on ESC key or backdrop click
     document.addEventListener('keydown', function(event) {
@@ -139,11 +143,9 @@
   });
 </script>
 
-
 <main class="flex-grow-1">
     {% block content %}{% endblock %}
 </main>
-
 
 <!-- Footer section -->
 <footer class="footer bg-dark text-light py-4 mt-auto">
@@ -156,14 +158,12 @@
         </p>
       </div>
 
-
       <div class="col-md-4 mb-4">
         <h4>Contact Us</h4>
         <p><i class="fa fa-map-marker-alt"></i> Address: CQT Avenue, Salawag, Dasmariñas City, Cavite</p>
         <p><i class="fa fa-phone"></i> Mobile Number: +63 919 616 1221 </p>
         <p><i class="fa fa-envelope"></i> Email: tupcptlt@gmail.com</p>
       </div>
-
 
     </div>
   </div>
@@ -193,17 +193,14 @@
   </div>
 </footer>
 
-
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   // Find modal element
   const modalEl = document.getElementById('confirmLogoutModal');
   if (!modalEl) return; // nothing to do if modal missing
 
-
   const bsModal = new bootstrap.Modal(modalEl, { keyboard: true, backdrop: 'static' });
   let logoutHref = null;
-
 
   // Attach click handler to any logout buttons/links
   document.querySelectorAll('.logout_btn').forEach(btn => {
@@ -213,7 +210,6 @@ document.addEventListener("DOMContentLoaded", function () {
       bsModal.show();
     });
   });
-
 
   // Confirm button on modal — perform the redirect
   const confirmBtn = modalEl.querySelector('#confirmLogoutBtn');
@@ -226,7 +222,6 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 </script>
-
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
