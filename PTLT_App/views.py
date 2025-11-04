@@ -1042,8 +1042,6 @@ import io
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Account, ClassSchedule, CourseSection
-
-# import csv🔥
 @csrf_exempt
 @instructor_or_admin_required
 def import_class_schedule(request):
@@ -1078,7 +1076,7 @@ def import_class_schedule(request):
             'errors': [],
             'students_created': 0,
             'students_linked': 0,
-            'attendance_created': 0  # ✅ NEW
+            'attendance_created': 0
         }
         
         processed_schedules = set()
@@ -1104,7 +1102,7 @@ def import_class_schedule(request):
                 last_name = row.get('last_name', '').strip()
                 sex = row.get('sex', '').strip()
                 
-                # ✅ NEW: Attendance fields (optional)
+                # Attendance fields (optional)
                 attendance_date_str = row.get('attendance_date', '').strip()
                 attendance_time_in_str = row.get('attendance_time_in', '').strip()
                 attendance_time_out_str = row.get('attendance_time_out', '').strip()
@@ -1142,10 +1140,38 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # Create or update ClassSchedule
+                # ⭐ NEW: CHECK FOR DUPLICATE CLASS SCHEDULE IN DATABASE
+                # Same course_code + course_section + day + time_in + time_out = DUPLICATE
+                existing_schedule = ClassSchedule.objects.filter(
+                    course_code=course_code,
+                    course_section=course_section,
+                    days=days,
+                    time_in=time_in,
+                    time_out=time_out
+                ).first()
+                
+                if existing_schedule:
+                    print(f"⚠️ Line {line_num}: DUPLICATE CLASS SCHEDULE DETECTED")
+                    print(f"   Course: {course_code}")
+                    print(f"   Section: {course_section.course_section}")
+                    print(f"   Day: {days}")
+                    print(f"   Time: {time_in} - {time_out}")
+                    print(f"   Existing ID: {existing_schedule.id}")
+                    
+                    results['errors'].append(f'Line {line_num}: Class schedule already exists for {course_code} {course_section.course_section} on {days} from {time_in} to {time_out}')
+                    results['skipped'] += 1
+                    continue
+                
+                # Create or update ClassSchedule (only if NOT a duplicate)
                 schedule_key = f"{course_code}_{course_section_id}"
                 
                 if schedule_key not in processed_schedules:
+                    print(f"✅ Line {line_num}: Creating ClassSchedule")
+                    print(f"   Course: {course_code}")
+                    print(f"   Section: {course_section.course_section}")
+                    print(f"   Day: {days}")
+                    print(f"   Time: {time_in} - {time_out}")
+                    
                     class_schedule, created = ClassSchedule.objects.update_or_create(
                         course_code=course_code,
                         course_section=course_section,
@@ -1182,7 +1208,7 @@ def import_class_schedule(request):
                                 'last_name': last_name,
                                 'role': 'Student',
                                 'email': '',
-                                'password': None,  # NO PASSWORD
+                                'password': None,
                                 'sex': sex_value,
                                 'status': 'Inactive',
                                 'course_section': course_section
@@ -1197,7 +1223,7 @@ def import_class_schedule(request):
                                 student_account.save()
                                 results['students_linked'] += 1
                         
-                        # ✅ NEW: Create attendance record if date/time provided
+                        # Create attendance record if date/time provided
                         if attendance_date_str and attendance_time_in_str:
                             try:
                                 attendance_date = datetime.strptime(attendance_date_str, '%Y-%m-%d').date()
@@ -1218,7 +1244,7 @@ def import_class_schedule(request):
                                         'time_in': attendance_time_in,
                                         'time_out': attendance_time_out,
                                         'status': attendance_status,
-                                        'fingerprint_data': b''  # Empty for CSV
+                                        'fingerprint_data': b''
                                     }
                                 )
                                 results['attendance_created'] += 1
@@ -1249,7 +1275,7 @@ def import_class_schedule(request):
                 class_schedule.student_count = actual_count
                 class_schedule.save()
             except Exception as e:
-                print(f"Error updating student count: {str(e)}")
+                print(f"❌ Error updating student count: {str(e)}")
         
         status_code = 'ok' if results['imported'] > 0 else 'failed'
         
@@ -1258,12 +1284,13 @@ def import_class_schedule(request):
             'imported': results['imported'],
             'students_created': results['students_created'],
             'students_linked': results['students_linked'],
-            'attendance_created': results['attendance_created'],  # ✅ NEW
+            'attendance_created': results['attendance_created'],
             'skipped': results['skipped'],
             'errors': results['errors'][:10]
         })
         
     except Exception as e:
+        print(f"❌ Error in import_class_schedule: {str(e)}")
         import traceback
         traceback.print_exc()
         return JsonResponse({
@@ -1273,7 +1300,6 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f"Server error: {str(e)}"]
         }, status=500)
-
 
 
 #try pdf import
