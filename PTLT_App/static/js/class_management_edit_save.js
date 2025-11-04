@@ -223,7 +223,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    // Import Class Schedule CSV
+        // Import Class Schedule CSV
     const importBtn = document.getElementById("importClassBtn");
     const fileInput = document.getElementById("fileInput");
 
@@ -238,6 +238,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const formData = new FormData();
             formData.append("csv_file", file);
+
+            importBtn.disabled = true;
+            importBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importing...';
 
             try {
                 const response = await fetch("/import_class_schedule/", {
@@ -256,16 +259,35 @@ document.addEventListener("DOMContentLoaded", function () {
                 } else if (data.status === "partial") {
                     let message = `⚠️ Import partially completed!\n\n`;
                     message += `✅ Successfully imported: ${data.imported} class schedule(s)\n`;
+                    message += `👥 Students created: ${data.students_created || 0}\n`;
+                    message += `👥 Students linked: ${data.students_linked || 0}\n`;
+                    message += `📋 Attendance records: ${data.attendance_created || 0}\n`;
                     message += `⚠️ Skipped: ${data.skipped} class schedule(s)\n\n`;
+                    
+                    // Show ALL raw errors first
+                    if (data.errors && data.errors.length > 0) {
+                        message += `📋 Errors found (${data.errors.length} total):\n`;
+                        data.errors.forEach((error, index) => {
+                            message += `${index + 1}. ${error}\n`;
+                        });
+                        message += `\n`;
+                    }
+                    
                     message += `Issues found:\n`;
                     
                     const friendlyErrors = data.errors.map(error => {
                         if (error.includes("Professor") && error.includes("not found")) {
-                            return "• Some instructors in your file don't exist in the system";
+                            return "• Make sure all instructor IDs in your file exist in the system";
                         } else if (error.includes("Section") && error.includes("not found")) {
-                            return "• Some course sections in your file don't exist in the system";
+                            return "• Make sure all course section IDs in your file are valid";
                         } else if (error.includes("Failed to save")) {
                             return "• Some data had formatting issues";
+                        } else if (error.includes("DUPLICATE")) {
+                            return "• Some rows contain duplicate class schedules (same section, day, and time)";
+                        } else if (error.includes("Invalid time format")) {
+                            return "• Some rows have invalid time format (use HH:MM format)";
+                        } else if (error.includes("Missing required fields")) {
+                            return "• Some rows are missing required fields (course_code, course_section_id, time_in, time_out)";
                         } else {
                             return "• " + error.split(":").pop().trim();
                         }
@@ -274,6 +296,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     const uniqueErrors = [...new Set(friendlyErrors)];
                     message += uniqueErrors.join("\n");
                     
+                    console.error('⚠️ Partial import errors:', data.errors);
                     alert(message);
                     if (data.imported > 0) {
                         location.reload();
@@ -281,6 +304,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 } else {
                     let message = `❌ Import failed!\n\n`;
                     message += `No class schedules were imported.\n\n`;
+                    
+                    // Show ALL raw errors first (for debugging)
+                    if (data.errors && data.errors.length > 0) {
+                        message += `📋 Errors found (${data.errors.length} total):\n`;
+                        data.errors.forEach((error, index) => {
+                            message += `${index + 1}. ${error}\n`;
+                        });
+                        message += `\n`;
+                    }
+                    
                     message += `Please check the following:\n`;
                     
                     const friendlyErrors = data.errors.map(error => {
@@ -292,6 +325,12 @@ document.addEventListener("DOMContentLoaded", function () {
                             return "• Check that your data is properly formatted (times, numbers, etc.)";
                         } else if (error.includes("Failed to read CSV")) {
                             return "• Make sure your file is a valid CSV format";
+                        } else if (error.includes("DUPLICATE")) {
+                            return "• Some rows contain duplicate class schedules (same section, day, and time)";
+                        } else if (error.includes("Invalid time format")) {
+                            return "• Some rows have invalid time format (use HH:MM format)";
+                        } else if (error.includes("Missing required fields")) {
+                            return "• Some rows are missing required fields (course_code, course_section_id, time_in, time_out)";
                         } else {
                             return "• " + error.split(":").pop().trim();
                         }
@@ -300,13 +339,20 @@ document.addEventListener("DOMContentLoaded", function () {
                     const uniqueErrors = [...new Set(friendlyErrors)];
                     message += uniqueErrors.join("\n");
                     
+                    console.error('❌ Import errors:', data.errors);
                     alert(message);
                 }
             } catch (err) {
+                console.error('❌ CSV import error:', err);
                 alert("⚠️ Error importing CSV: " + err);
+            } finally {
+                importBtn.disabled = false;
+                importBtn.innerHTML = 'Import from CSV';
+                fileInput.value = '';
             }
         });
     }
+
 
     // ===== ADD COURSE SECTION MODAL =====
     
