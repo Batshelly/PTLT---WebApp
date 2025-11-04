@@ -80,18 +80,28 @@ import random
 from datetime import datetime, timedelta, date
 from .models import Account, CourseSection, ClassSchedule
 
-# Custom authentication decorators
 def admin_required(view_func):
+    """Decorator for admin-only views - handles both AJAX and regular requests"""
     @wraps(view_func)
     @login_required
     def wrapper(request, *args, **kwargs):
         try:
-            account = Account.objects.get(email=request.user.email, role='Admin')
+            account = Account.objects.get(email=request.user.email, role="Admin")
         except Account.DoesNotExist:
-            messages.error(request, "Access denied: Admin privileges required.")
-            return redirect('login')
+            # Check if it's an AJAX request
+            if request.headers.get('Content-Type') == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Access denied: Admin privileges required.'
+                }, status=403)
+            else:
+                messages.error(request, "Access denied: Admin privileges required.")
+                return redirect('login')
+        
+        # ⚠️ CRITICAL: Must return the view function's response
         return view_func(request, *args, **kwargs)
     return wrapper
+
 
 def instructor_or_admin_required(view_func):
     @wraps(view_func)
@@ -1267,9 +1277,9 @@ def import_class_schedule(request):
 
 
 #try pdf import
-
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
+    """Import class schedule from PDF with duplicate detection"""
     if 'pdf_file' not in request.FILES:
         return JsonResponse({'status': 'error', 'message': 'No PDF file provided'}, status=400)
     
@@ -1322,13 +1332,11 @@ def import_class_from_pdf(request):
             parts = section_str.split('-')
             if len(parts) >= 3:
                 # Extract course and section
-                # For "BET-COET-C-BET-COET-C-4A-C", we want "BET-COET-C" and "4A-C"
                 mid_point = len(parts) // 2
                 schedule_data['course_name'] = '-'.join(parts[:mid_point])
                 schedule_data['section_name'] = '-'.join(parts[-2:])
         
         # Extract student information
-        # Pattern: number. TUPC-XX-XXXX LASTNAME, FIRSTNAME MIDDLENAME
         student_pattern = r'\d+\.\s*(TUPC-\d{2}-\d{4})\s+([A-Z\s,]+?)(?:\s+BET-COET|$)'
         student_matches = re.finditer(student_pattern, full_text)
 
@@ -1341,7 +1349,7 @@ def import_class_from_pdf(request):
             if not id_match:
                 continue
             
-            short_id = id_match.group(1) + id_match.group(2)  # e.g., "220352"
+            short_id = id_match.group(1) + id_match.group(2)
             
             # Parse name (LASTNAME, FIRSTNAME SECONDNAME MIDDLENAME)
             name_parts = name.split(',')
@@ -1352,7 +1360,6 @@ def import_class_from_pdf(request):
                 # Split the part after comma and take only first 2 names
                 name_after_comma = name_parts[1].strip().split()
                 
-                # Take first two words (first name + second name), skip third (middle name)
                 if len(name_after_comma) >= 2:
                     first_name = f"{name_after_comma[0]} {name_after_comma[1]}".title()
                 elif len(name_after_comma) == 1:
@@ -1371,12 +1378,14 @@ def import_class_from_pdf(request):
         missing_fields = [f for f in required_fields if f not in schedule_data]
         
         if missing_fields:
+            print(f"❌ Missing fields: {missing_fields}")
             return JsonResponse({
                 'status': 'error',
                 'message': f'Could not parse schedule information. Missing: {", ".join(missing_fields)}'
             }, status=400)
         
         if not all_students:
+            print(f"❌ No students found in PDF")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Could not find any students in the PDF file'
@@ -1388,7 +1397,32 @@ def import_class_from_pdf(request):
             section_name=schedule_data['section_name']
         )
         
-        # Create ClassSchedule
+        # ⭐ CHECK IF CLASS SCHEDULE WITH SAME SECTION AND TIME ALREADY EXISTS
+        existing_schedule = ClassSchedule.objects.filter(
+            course_section=course_section,
+            days=schedule_data['day'],
+            time_in=schedule_data['time_in'],
+            time_out=schedule_data['time_out']
+        ).first()
+        
+        if existing_schedule:
+            print(f"⚠️ DUPLICATE DETECTED:")
+            print(f"   Course/Section: {course_section.course_section}")
+            print(f"   Day: {schedule_data['day']}")
+            print(f"   Time: {schedule_data['time_in']} - {schedule_data['time_out']}")
+            print(f"   Existing ClassSchedule ID: {existing_schedule.id}")
+            
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Class schedule already exists for {course_section.course_section} on {schedule_data["day"]} from {schedule_data["time_in"]} to {schedule_data["time_out"]}'
+            }, status=400)
+        
+        # Create ClassSchedule (only if it doesn't exist)
+        print(f"✅ Creating new ClassSchedule:")
+        print(f"   Course/Section: {course_section.course_section}")
+        print(f"   Day: {schedule_data['day']}")
+        print(f"   Time: {schedule_data['time_in']} - {schedule_data['time_out']}")
+        
         class_schedule = ClassSchedule.objects.create(
             course_code=schedule_data['course_code'],
             course_title=schedule_data['course_title'],
@@ -1413,7 +1447,7 @@ def import_class_from_pdf(request):
                 print(f"DEBUG: Saving student - ID: {student_info['user_id']}, First: '{student_info['first_name']}', Last: '{student_info['last_name']}'")
                 Account.objects.create(
                     user_id=student_info['user_id'],
-                    email='',  # Empty - will be filled via mobile app
+                    email='',
                     first_name=student_info['first_name'],
                     last_name=student_info['last_name'],
                     role='Student',
@@ -1431,6 +1465,8 @@ def import_class_from_pdf(request):
         class_schedule.student_count = len(all_students)
         class_schedule.save()
         
+        print(f"✅ Import completed: {created_students} students created, {skipped_students} skipped")
+        
         return JsonResponse({
             'status': 'success',
             'message': 'Successfully imported class schedule',
@@ -1447,13 +1483,14 @@ def import_class_from_pdf(request):
         })
         
     except Exception as e:
-        print(f"Error importing PDF: {str(e)}")
+        print(f"❌ Error importing PDF: {str(e)}")
         import traceback
         traceback.print_exc()
         return JsonResponse({
             'status': 'error',
             'message': f'Failed to parse PDF: {str(e)}'
         }, status=500)
+
         
 @admin_required
 def class_management(request):
@@ -1540,20 +1577,31 @@ def class_management(request):
 @require_http_methods(["POST"])
 @admin_required
 def add_course_section(request):
+    """Add a new course section via AJAX"""
+    print("🔵 add_course_section called")  # Debug log
+    
     try:
+        # Parse JSON body
         data = json.loads(request.body)
         course_name = data.get('course_name', '').strip()
         section_name = data.get('section_name', '').strip()
 
+        print(f"📥 Received: course_name='{course_name}', section_name='{section_name}'")
+
+        # Validate input
         if not course_name or not section_name:
+            print("❌ Validation failed: missing fields")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Course name and section name are required.'
             }, status=400)
 
-        # Check if already exists
+        # Create course section string
         course_section_str = f"{course_name} {section_name}"
+        
+        # Check for duplicates
         if CourseSection.objects.filter(course_section=course_section_str).exists():
+            print(f"⚠️ Duplicate detected: {course_section_str}")
             return JsonResponse({
                 'status': 'error',
                 'message': f'Section "{course_section_str}" already exists.'
@@ -1564,18 +1612,30 @@ def add_course_section(request):
             course_name=course_name,
             section_name=section_name
         )
+        
+        print(f"✅ Created section: {new_section.course_section} (ID: {new_section.id})")
 
+        # Return success response
         return JsonResponse({
             'status': 'success',
             'message': 'Course section added successfully.',
             'course_section': new_section.course_section
         })
 
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON decode error: {e}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON format.'
+        }, status=400)
     except Exception as e:
+        print(f"❌ Exception in add_course_section: {e}")
+        import traceback
+        traceback.print_exc()
         return JsonResponse({
             'status': 'error',
             'message': str(e)
-        }, status=500)    
+        }, status=500)
 
 @csrf_exempt
 @admin_required

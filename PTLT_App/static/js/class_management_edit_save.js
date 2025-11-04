@@ -326,7 +326,7 @@ document.addEventListener("DOMContentLoaded", function () {
         sectionNameInput.addEventListener('input', updatePreview);
     }
 
-    // Save new course section
+        // Save new course section
     const saveSectionBtn = document.getElementById("saveSectionBtn");
     const addSectionForm = document.getElementById("addSectionForm");
     const courseSectionSelect = document.getElementById("courseSectionSelect");
@@ -345,6 +345,8 @@ document.addEventListener("DOMContentLoaded", function () {
             saveSectionBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
 
             try {
+                console.log('📤 Sending:', { course_name: courseName, section_name: sectionName });
+                
                 const response = await fetch('/add_course_section/', {
                     method: 'POST',
                     headers: {
@@ -357,34 +359,67 @@ document.addEventListener("DOMContentLoaded", function () {
                     })
                 });
 
-                const data = await response.json();
+                console.log('✅ Response status:', response.status);
+                console.log('✅ Response ok:', response.ok);
+                console.log('✅ Content-Type:', response.headers.get('content-type'));
 
-                if (data.status === 'success') {
+                // Get raw text first
+                const rawText = await response.text();
+                console.log('📥 Raw response:', rawText);
+
+                // Try to parse JSON
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                    console.log('✅ Parsed data:', data);
+                } catch (parseError) {
+                    console.error('❌ JSON parse error:', parseError);
+                    console.error('❌ Raw response was:', rawText);
+                    alert('❌ Server returned invalid response. The page may have redirected to login. Check console for details.');
+                    return;
+                }
+
+                // Check response status
+                if (response.ok && data.status === 'success') {
+                    console.log('✅ Success! Adding to dropdown...');
+                    
+                    // Add to dropdown
                     const newOption = document.createElement('option');
                     newOption.value = data.course_section;
                     newOption.textContent = data.course_section;
                     newOption.selected = true;
                     courseSectionSelect.appendChild(newOption);
 
+                    // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('addSectionModal'));
-                    modal.hide();
+                    if (modal) {
+                        modal.hide();
+                    }
 
+                    // Reset form
                     addSectionForm.reset();
-                    previewSection.textContent = '-';
+                    if (previewSection) {
+                        previewSection.textContent = '-';
+                    }
 
                     alert(`✅ Successfully added: ${data.course_section}`);
                 } else {
-                    alert(`❌ Error: ${data.message}`);
+                    console.error('❌ Server error:', data);
+                    alert(`❌ Error: ${data.message || 'Unknown error'}`);
                 }
             } catch (error) {
-                console.error('Error adding section:', error);
-                alert('❌ Failed to add section. Please try again.');
+                console.error('❌ Network error:', error);
+                console.error('❌ Error stack:', error.stack);
+                alert('❌ Failed to add section. Check console (F12) for details.');
             } finally {
                 saveSectionBtn.disabled = false;
                 saveSectionBtn.textContent = 'Save Section';
             }
         });
     }
+
+
+
         // Import Class PDF
     const importPdfBtn = document.getElementById("importClassPdfBtn");
     const pdfFileInput = document.getElementById("pdfFileInput");
