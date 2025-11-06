@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'PTLT_App.middleware.SessionExpiredMiddleware',
     'corsheaders.middleware.CorsMiddleware', 
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -187,6 +188,11 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000',
 ]
 
+# Session configuration (applies to both development and production)
+SESSION_COOKIE_AGE = 60  # 30 minutes in seconds
+SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser closes
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'  # Better performance
 
 # 🔥 ADDED: Security settings for Railway deployment
 if not DEBUG:
@@ -195,6 +201,10 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+    # Session timeout configuration
+    SESSION_COOKIE_AGE = 60  # 30 minutes in seconds
+    SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser close
 # Logging
 LOGGING = {
     'version': 1,
