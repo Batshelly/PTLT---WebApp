@@ -1,5 +1,4 @@
 from django.shortcuts import redirect
-from django.urls import reverse
 
 class SessionExpiredMiddleware:
     """
@@ -13,7 +12,7 @@ class SessionExpiredMiddleware:
         if request.user.is_authenticated:
             # If user is marked as authenticated but session is empty, session expired
             if not request.session.session_key:
-                return redirect('/?session_expired=true')  # 🔥 CHANGE: Root path /
+                return redirect('/?session_expired=true')
         
         response = self.get_response(request)
         return response
