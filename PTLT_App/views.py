@@ -142,8 +142,15 @@ PERIODS = [
 @transaction.atomic 
 def login_view(request):
     
+    # 🔥 NEW: Clear all messages when session expires
     session_expired = request.GET.get('session_expired', False)
     if session_expired:
+        # Clear all existing messages
+        from django.contrib.messages import get_messages
+        storage = get_messages(request)
+        storage.used = True  # Mark all messages as used to clear them
+        
+        # Add the session expired message
         messages.warning(request, 'Your session has expired. Please log in again.')
         
     # Check if any semester ended and not archived yet
