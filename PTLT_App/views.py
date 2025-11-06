@@ -24,8 +24,6 @@ from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
-from django.shortcuts import redirect
-from django.urls import reverse
 import datetime
 import csv
 import io
@@ -2657,20 +2655,3 @@ def get_attendance_data_api(request):
         return JsonResponse({'error': 'Class schedule not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-    
-class SessionExpiredMiddleware:
-    """
-    Middleware to detect session expiration and redirect to login with a message.
-    """
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        # Check if user was authenticated but session is now empty
-        if request.user.is_authenticated:
-            # If user is marked as authenticated but session is empty, session expired
-            if not request.session.session_key:
-                return redirect(f"{reverse('login')}?session_expired=true")
-        
-        response = self.get_response(request)
-        return response    
