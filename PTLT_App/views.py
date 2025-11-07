@@ -2399,9 +2399,8 @@ def generate_attendance_docx(request, schedule_id):
         students = list(Account.objects.filter(
             course_section=class_schedule.course_section, 
             role='Student'
-        ).order_by('last_name', 'first_name').distinct('last_name', 'first_name')[:40])
+        ).order_by('last_name', 'first_name')[:40])
         logger.error(f"✓ {len(students)} students")
-
 
 
         attendance_dates = list(AttendanceRecord.objects.filter(
