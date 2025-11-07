@@ -2486,48 +2486,34 @@ def generate_attendance_docx(request, schedule_id):
                 if placeholder in paragraph.text:
                     paragraph.text = paragraph.text.replace(placeholder, str(value))
 
-        
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    cell_text = cell.text
-                    if '{{' in cell_text:
-                        for paragraph in cell.paragraphs:
-                            text = paragraph.text
-                            has_time_data = False
-                            name_text = ""
-                            
-                            for key, value in replacements.items():
-                                if key in text:
-                                    text = text.replace(key, value)
-                                    if key in time_cells:
-                                        has_time_data = True
-                                    if 'name' in key:
-                                        name_text = value
-                            
-                            if text != paragraph.text:
-                                paragraph.text = text
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        cell_text = cell.text
+                        if '{{' in cell_text:
+                            for paragraph in cell.paragraphs:
+                                text = paragraph.text
                                 
-                                if '/' in text and len(text) <= 10 and text[0].isdigit():
-                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(10)
+                                for key, value in replacements.items():
+                                    if key in text:
+                                        text = text.replace(key, value)
                                 
-                                elif name_text:
-                                    for run in paragraph.runs:
-                                        if len(text) > 25:
-                                            run.font.size = Pt(7)
-                                        elif len(text) > 20:
+                                if text != paragraph.text:
+                                    paragraph.text = text
+                                    
+                                    if '/' in text and len(text) <= 10 and text[0].isdigit():
+                                        for run in paragraph.runs:
                                             run.font.size = Pt(8)
-                                        elif len(text) > 15:
+                                    
+                                    elif len(text) > 25:
+                                        for run in paragraph.runs:
+                                            run.font.size = Pt(7)
+                                    elif len(text) > 20:
+                                        for run in paragraph.runs:
+                                            run.font.size = Pt(8)
+                                    elif len(text) > 15:
+                                        for run in paragraph.runs:
                                             run.font.size = Pt(9)
-                                        else:
-                                            run.font.size = Pt(10)
-                                
-                                elif has_time_data:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
-
 
 
         buffer = BytesIO()
