@@ -2479,7 +2479,7 @@ def generate_attendance_docx(request, schedule_id):
                 replacements[f'date{i}'] = ''
         
         # Load template
-        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendancetemplate.docx')
+        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         
         if not os.path.exists(template_path):
             logger.error(f'Template not found at {template_path}')
