@@ -2353,207 +2353,183 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX - OPTIMIZED VERSION"""
     import logging
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from io import BytesIO
+    from collections import defaultdict
+    from datetime import datetime
+    from django.conf import settings
+    import os
+
     logger = logging.getLogger(__name__)
-    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
-    
+    logger.error(f'DOCX Download Started for schedule_id: {schedule_id}')
+
     try:
-        import os
-        from docx import Document
-        from docx.shared import Pt
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        from io import BytesIO
-        from collections import defaultdict
-        from datetime import datetime
-        from django.conf import settings
-        import re
-
-
-        # Require date range
         date_range = request.GET.get('date_range')
-        if not date_range:
-            logger.error("✗ No date range provided")
-            return HttpResponse('<h3>Date Range Required</h3><p>Please select a date range.</p>', status=400)
-        
-        # Parse date range
+
         try:
-            logger.error(f"Raw date_range: '{date_range}'")
-            parts = date_range.split('to')
-            start_str = re.sub(r'[^0-9-]', '', parts[0].strip())
-            end_str = re.sub(r'[^0-9-]', '', parts[1].strip())
-            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
-            logger.error(f"✓ Parsed: {start_date} to {end_date}")
-        except Exception as e:
-            logger.error(f"✗ Invalid date: {str(e)}")
-            return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
-
-
-        # Load template
-        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
-        if not os.path.exists(template_path):
-            return HttpResponse("Template not found", status=500)
-        doc = Document(template_path)
-        logger.error("✓ Template loaded")
-
-
-        # Get data
-        class_schedule = ClassSchedule.objects.get(id=schedule_id)
-        students = list(Account.objects.filter(
-            course_section=class_schedule.course_section, 
-            role='Student'
-        ).order_by('last_name', 'first_name')[:40])
-        logger.error(f"✓ {len(students)} students")
-
-
-        # Get attendance
-        attendance_dates = list(AttendanceRecord.objects.filter(
-            class_schedule=class_schedule,
-            date__range=[start_date, end_date]
-        ).values_list('date', flat=True).distinct().order_by('date')[:8])
-        
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule,
-            status__in=['Present', 'Late'],
-            date__range=[start_date, end_date]
-        ).select_related('student')
-
+            class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        except ClassSchedule.DoesNotExist:
+            return HttpResponse('Class schedule not found', status=404)
 
         attendance_data = defaultdict(lambda: defaultdict(dict))
+        attendance_qs = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).select_related('student')
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
+                'status': record.status,
                 'time_in': record.time_in,
                 'time_out': record.time_out
             }
-        logger.error(f"✓ {len(attendance_dates)} dates")
 
+        attendance_dates = list(AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).values_list('date', flat=True).distinct().order_by('date'))
 
-        # Build replacements dictionary
-        replacements = {
-            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
-            '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
-            '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
-            '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
-            '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
-        }
+        if date_range:
+            try:
+                start_str, end_str = date_range.split('_to_')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                pass
 
+        date_ranges = []
+        for i in range(0, len(attendance_dates), 8):
+            start_date = attendance_dates[i]
+            end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
+            date_ranges.append({
+                'value': f'{start_date.strftime("%Y-%m-%d")}_to_{end_date.strftime("%Y-%m-%d")}',
+                'label': f'{start_date.strftime("%b %d, %Y")} - {end_date.strftime("%b %d, %Y")}'
+            })
 
-        # Dates
-        for i in range(1, 9):
-            if i - 1 < len(attendance_dates):
-                replacements[f'{{{{date{i}}}}}'] = attendance_dates[i-1].strftime('%m/%d/%Y')
-            else:
-                replacements[f'{{{{date{i}}}}}'] = ''
+        if date_range:
+            try:
+                start_str, end_str = date_range.split('_to_')
+                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                start_date = end_date = None
+        else:
+            start_date = end_date = None
 
+        if start_date and end_date:
+            dates_in_range = list(AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date__range=[start_date, end_date]
+            ).values_list('date', flat=True).distinct().order_by('date')[:8])
+        else:
+            dates_in_range = attendance_dates[:8]
 
-        # Students - track time cells for font sizing
+        date_headers = [d.strftime('%m/%d') for d in dates_in_range]
+
+        students_in_schedule = list(Account.objects.filter(
+            course_section=class_schedule.course_section,
+            role='Student'
+        ).order_by('last_name', 'first_name')[:40])
+
+        replacements = {}
         time_cells = set()
+
         for i in range(1, 41):
-            if i - 1 < len(students):
-                student = students[i - 1]
-                replacements[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
-                
+            if i - 1 < len(students_in_schedule):
+                student = students_in_schedule[i - 1]
+                replacements[f'student{i}name'] = f'{student.last_name}, {student.first_name}'
+                replacements[f'student{i}sex'] = student.sex[0] if student.sex else 'M'
+
                 for j in range(1, 9):
-                    key = f'{{{{student{i}_time{j}}}}}'
-                    if j - 1 < len(attendance_dates):
-                        date = attendance_dates[j - 1]
+                    key = f'student{i}time{j}'
+                    if j - 1 < len(dates_in_range):
+                        date = dates_in_range[j - 1]
                         if date in attendance_data[student.id]:
                             att = attendance_data[student.id][date]
                             time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                             time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+
                             if time_in_str and time_out_str:
-                                replacements[key] = f"{time_in_str} - {time_out_str}"
+                                replacements[key] = f'{time_in_str} - {time_out_str}'
                                 time_cells.add(key)
-                                continue
-                    replacements[key] = ''
+                            else:
+                                replacements[key] = ''
+                        else:
+                            replacements[key] = ''
+                    else:
+                        replacements[key] = ''
             else:
-                replacements[f'{{{{student{i}_name}}}}'] = ''
-                replacements[f'{{{{student{i}_sex}}}}'] = ''
+                replacements[f'student{i}name'] = ''
+                replacements[f'student{i}sex'] = ''
                 for j in range(1, 9):
-                    replacements[f'{{{{student{i}_time{j}}}}}'] = ''
+                    replacements[f'student{i}time{j}'] = ''
 
+        date_headers = [d.strftime('%m/%d') for d in dates_in_range]
+        for i in range(1, 9):
+            if i - 1 < len(date_headers):
+                replacements[f'date{i}'] = date_headers[i - 1]
+            else:
+                replacements[f'date{i}'] = ''
 
-        logger.error(f"✓ Built {len(replacements)} replacements")
+        # ✨ FIX 1: CORRECTED PATH
+        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
 
+        if not os.path.exists(template_path):
+            return HttpResponse('Template not found', status=500)
 
-        # OPTIMIZED: Single pass replacement
+        doc = Document(template_path)
+
+        # ✨ FIX 2: REPLACE {{DOUBLE BRACES}} FORMAT
+        for paragraph in doc.paragraphs:
+            for key, value in replacements.items():
+                placeholder = f'{{{{{key}}}}}'  # Creates {{key}}
+                if placeholder in paragraph.text:
+                    paragraph.text = paragraph.text.replace(placeholder, str(value))
+
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    cell_text = cell.text
-                    # Only process cells that contain placeholders
-                    if '{{' in cell_text:
-                        for paragraph in cell.paragraphs:
-                            text = paragraph.text
-                            has_time_data = False
-                            name_text = ""
-                            
-                            # Replace all placeholders in this paragraph
-                            for key, value in replacements.items():
-                                if key in text:
-                                    text = text.replace(key, value)
-                                    if key in time_cells:
-                                        has_time_data = True
-                                    if 'name' in key:
-                                        name_text = value
-                            
-                            # Only update if changed
-                            if text != paragraph.text:
-                                paragraph.text = text
-                                
-                                # ✨ SET FONT SIZE FOR DATES (centered)
-                                if '/' in text and text.count('/') <= 2:  # MM/DD/YYYY format
-                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(10)
-                                
-                                # ✨ SET FONT SIZE FOR LONG NAMES
-                                elif name_text:
-                                    for run in paragraph.runs:
-                                        if len(text) > 25:
-                                            run.font.size = Pt(7)
-                                        elif len(text) > 20:
-                                            run.font.size = Pt(8)
-                                        elif len(text) > 15:
-                                            run.font.size = Pt(9)
-                                        else:
-                                            run.font.size = Pt(10)
-                                
-                                # ✨ SET FONT SIZE FOR TIME DATA
-                                elif has_time_data:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
+                    for paragraph in cell.paragraphs:
+                        # ✨ FIX 2: REPLACE {{DOUBLE BRACES}} IN TABLES
+                        for key, value in replacements.items():
+                            placeholder = f'{{{{{key}}}}}'
+                            if placeholder in paragraph.text:
+                                paragraph.text = paragraph.text.replace(placeholder, str(value))
+                        
+                        # ✨ FORMAT DATES AND NAMES
+                        for run in paragraph.runs:
+                            text = run.text.strip()
 
+                            if '/' in text and text.count('/') == 1:
+                                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                run.font.size = Pt(12)
 
-        logger.error("✓ Replacements complete")
+                            elif len(text) > 25:
+                                run.font.size = Pt(8)
+                            elif len(text) > 20:
+                                run.font.size = Pt(9)
+                            elif len(text) > 15:
+                                run.font.size = Pt(10)
+                            else:
+                                run.font.size = Pt(11)
 
-
-        # Save
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
 
-
-        filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
-        logger.error(f"✓ Complete: {filename}")
-
-
+        filename = f'Attendance_{class_schedule.course_code}_{date_range}.docx'
         response = HttpResponse(
             buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
 
+        return response
 
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
-        logger.error(f"✗ ERROR: {error_msg}")
+        logger.error(f'ERROR: {error_msg}')
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
 
 
