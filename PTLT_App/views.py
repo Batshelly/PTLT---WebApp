@@ -2353,7 +2353,7 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX with centered dates and auto-resizing names"""
+    """Generate DOCX with centered dates and auto-resizing names - FIXED"""
     import logging
     from docx import Document
     from docx.shared import Pt, Inches
@@ -2375,45 +2375,71 @@ def generate_attendance_docx(request, schedule_id):
         except ClassSchedule.DoesNotExist:
             return HttpResponse('Class schedule not found', status=404)
         
-        # Parse date range
+        # ✨ FIXED: Parse date range with better error handling
+        start_date = None
+        end_date = None
+        
         if date_range:
             try:
-                start_str, end_str = date_range.split('_to_')
-                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
+                parts = date_range.split('_to_')
+                if len(parts) == 2:
+                    start_str, end_str = parts
+                    start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+                    logger.error(f'Date range parsed: {start_date} to {end_date}')
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.error(f'Error parsing date range: {str(e)}')
                 start_date = end_date = None
-        else:
-            start_date = end_date = None
         
         # Get attendance dates
-        attendance_dates = list(AttendanceRecord.objects.filter(
-            class_schedule=class_schedule,
-            date__range=[start_date, end_date] if start_date and end_date else [None, None]
-        ).values_list('date', flat=True).distinct().order_by('date')[:8])
+        try:
+            if start_date and end_date:
+                attendance_dates = list(AttendanceRecord.objects.filter(
+                    class_schedule=class_schedule,
+                    date__range=[start_date, end_date]
+                ).values_list('date', flat=True).distinct().order_by('date')[:8])
+            else:
+                attendance_dates = list(AttendanceRecord.objects.filter(
+                    class_schedule=class_schedule
+                ).values_list('date', flat=True).distinct().order_by('date')[:8])
+            
+            logger.error(f'Found {len(attendance_dates)} attendance dates')
+        except Exception as e:
+            logger.error(f'Error getting attendance dates: {str(e)}')
+            attendance_dates = []
         
         # Get students
-        students_in_schedule = list(Account.objects.filter(
-            course_section=class_schedule.course_section,
-            role='Student'
-        ).order_by('last_name', 'first_name')[:40])
+        try:
+            students_in_schedule = list(Account.objects.filter(
+                course_section=class_schedule.course_section,
+                role='Student'
+            ).order_by('last_name', 'first_name')[:40])
+            
+            logger.error(f'Found {len(students_in_schedule)} students')
+        except Exception as e:
+            logger.error(f'Error getting students: {str(e)}')
+            students_in_schedule = []
         
         # Build attendance data map
-        attendance_data = defaultdict(lambda: defaultdict(dict))
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).select_related('student')
+        try:
+            attendance_data = defaultdict(lambda: defaultdict(dict))
+            attendance_qs = AttendanceRecord.objects.filter(
+                class_schedule=class_schedule
+            ).select_related('student')
+            
+            for record in attendance_qs:
+                attendance_data[record.student.id][record.date] = {
+                    'status': record.status,
+                    'time_in': record.time_in,
+                    'time_out': record.time_out
+                }
+            logger.error(f'Built attendance data map')
+        except Exception as e:
+            logger.error(f'Error building attendance data: {str(e)}')
+            attendance_data = defaultdict(lambda: defaultdict(dict))
         
-        for record in attendance_qs:
-            attendance_data[record.student.id][record.date] = {
-                'status': record.status,
-                'time_in': record.time_in,
-                'time_out': record.time_out
-            }
-        
-        # Build replacements for docx
+        # Build replacements
         replacements = {}
-        time_cells = set()
         
         for i in range(1, 41):
             if i - 1 < len(students_in_schedule):
@@ -2432,7 +2458,6 @@ def generate_attendance_docx(request, schedule_id):
                             
                             if time_in_str and time_out_str:
                                 replacements[key] = f'{time_in_str} - {time_out_str}'
-                                time_cells.add(key)
                             else:
                                 replacements[key] = ''
                         else:
@@ -2453,12 +2478,14 @@ def generate_attendance_docx(request, schedule_id):
             else:
                 replacements[f'date{i}'] = ''
         
-        # Load template and make replacements
+        # Load template
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendancetemplate.docx')
         
         if not os.path.exists(template_path):
+            logger.error(f'Template not found at {template_path}')
             return HttpResponse('Template not found', status=500)
         
+        logger.error(f'Template found at {template_path}')
         doc = Document(template_path)
         
         # Replace text in document
@@ -2469,37 +2496,35 @@ def generate_attendance_docx(request, schedule_id):
                         if key in run.text:
                             run.text = run.text.replace(key, str(value))
         
-        # FORMAT DATES AND NAMES
+        # ✨ FORMAT DATES AND NAMES IN DOCUMENT
         for paragraph in doc.paragraphs:
             for run in paragraph.runs:
-                # Check if this is a date (contains /)
-                if '/' in run.text and run.text.count('/') == 1:
-                    # CENTER DATES
+                text = run.text.strip()
+                # Check if this is a date
+                if '/' in text and text.count('/') == 1:
                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    # SET DATE FONT SIZE
-                    run.font.size = Pt(7)  # CHANGE 12 TO YOUR PREFERRED SIZE
+                    run.font.size = Pt(7)
         
-        # Also handle dates and names in tables
+        # ✨ FORMAT DATES AND NAMES IN TABLES
         for table in doc.tables:
-            # Set column widths to prevent stretching
             for row in table.rows:
-                for idx, cell in enumerate(row.cells):
+                for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             text = run.text.strip()
                             
-                            # FORMAT DATES
+                            # Format dates
                             if '/' in text and text.count('/') == 1:
                                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                run.font.size = Pt(12)  # Date font size
+                                run.font.size = Pt(7)
                             
-                            # AUTO-RESIZE NAMES (LONG TEXT)
-                            elif len(text) > 25:  
-                                run.font.size = Pt(8)  
-                            elif len(text) > 20:  
-                                run.font.size = Pt(9)   
-                            elif len(text) > 15:  
-                                run.font.size = Pt(10)  
+                            # ✨ AUTO-RESIZE LONG NAMES
+                            elif len(text) > 25:
+                                run.font.size = Pt(8)
+                            elif len(text) > 20:
+                                run.font.size = Pt(9)
+                            elif len(text) > 15:
+                                run.font.size = Pt(10)
                             else:
                                 run.font.size = Pt(11)
         
@@ -2515,13 +2540,15 @@ def generate_attendance_docx(request, schedule_id):
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
+        logger.error(f'DOCX generated successfully')
         return response
         
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
-        logger.error(f'ERROR: {error_msg}')
-        return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+        logger.error(f'CRITICAL ERROR: {error_msg}')
+        print(f'ERROR: {error_msg}')
+        return HttpResponse(f'<h3>Error Generating DOCX</h3><pre>{error_msg}</pre>', status=500)
 
 
 
