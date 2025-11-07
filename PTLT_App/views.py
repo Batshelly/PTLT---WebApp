@@ -2500,18 +2500,29 @@ def generate_attendance_docx(request, schedule_id):
                         for run in paragraph.runs:
                             text = run.text.strip()
 
-                            if '/' in text and text.count('/') == 1:
+                                                        # SET FONT SIZE AND CENTER FOR DATES ONLY
+                            if '/' in text and len(text) <= 10 and text[0].isdigit():  
                                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                run.font.size = Pt(8)
+                                for run in paragraph.runs:
+                                    run.font.size = Pt(10)  # Adjust size here
 
-                            elif len(text) > 25:
-                                run.font.size = Pt(8)
-                            elif len(text) > 20:
-                                run.font.size = Pt(9)
-                            elif len(text) > 15:
-                                run.font.size = Pt(10)
-                            else:
-                                run.font.size = Pt(11)
+                            # SET FONT SIZE FOR LONG NAMES
+                            elif name_text:
+                                for run in paragraph.runs:
+                                    if len(text) > 25:
+                                        run.font.size = Pt(7)
+                                    elif len(text) > 20:
+                                        run.font.size = Pt(8)
+                                    elif len(text) > 15:
+                                        run.font.size = Pt(9)
+                                    else:
+                                        run.font.size = Pt(10)
+
+                            # SET FONT SIZE FOR TIME DATA
+                            elif has_time_data:
+                                for run in paragraph.runs:
+                                    run.font.size = Pt(9)
+
 
         buffer = BytesIO()
         doc.save(buffer)
