@@ -2488,7 +2488,7 @@ def generate_attendance_docx(request, schedule_id):
                                 
                                 if '/' in text and len(text) <= 10 and text[0].isdigit():
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(8)
+                                        run.font.size = Pt(7)
                                 
                                 elif ' - ' in text and ':' in text:
                                     for run in paragraph.runs:
