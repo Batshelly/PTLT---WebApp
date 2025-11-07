@@ -101,3 +101,129 @@
     }
 }
 
+/* Force borders on ALL table elements */
+table {
+  border-collapse: collapse !important;
+  border: 1px solid #000 !important;
+}
+
+table tr {
+  border: 1px solid #000 !important;
+}
+
+table th,
+table td {
+  border: 1px solid #000 !important;
+  min-height: 25px !important;
+}
+
+/* Attendance table specific styles */
+.attendance-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+.attendance-table th, 
+.attendance-table td {
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid #000 !important;
+  min-height: 25px !important;
+  padding: 4px 8px !important;
+}
+
+/* Force borders on dynamically added content */
+#attendanceTableBody tr {
+  border: 1px solid #000 !important;
+}
+
+#attendanceTableBody td {
+  border: 1px solid #000 !important;
+  min-width: 80px !important;
+  min-height: 25px !important;
+  padding: 4px 8px !important;
+}
+
+/* Ensure empty cells show borders */
+#attendanceTableBody td:empty::after {
+  content: '\00a0';  /* Non-breaking space */
+  visibility: hidden;
+}
+
+#dateHeaderRow th {
+  border: 1px solid #000 !important;
+  padding: 4px 8px !important;
+}
+
+/* Force Bootstrap table borders */
+.table-bordered {
+  border: 1px solid #000 !important;
+}
+
+.table-bordered th,
+.table-bordered td {
+  border: 1px solid #000 !important;
+}
+
+/* All tables in attendance document */
+#attendance-doc table {
+  border-collapse: collapse !important;
+  border: 1px solid #000 !important;
+}
+
+#attendance-doc table th,
+#attendance-doc table td {
+  border: 1px solid #000 !important;
+}
+
+@media print {
+    body {
+        margin: 0 15px !important;
+        padding: 0 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    .container {
+        max-width: none !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    #attendance-doc {
+        position: static !important;
+        margin: 1px 0 !important;
+        padding: 1px !important;
+        width: 100% !important;
+        background-color: #ffffff !important;
+        border: none !important;
+        z-index: auto !important;
+    }
+
+    .d-print-none,
+    .no-print {
+        display: none !important;
+    }
+
+    .table {
+        margin-bottom: 0.5rem !important;
+    }
+
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    .attendance-table {
+        page-break-inside: avoid !important;
+    }
+
+    /* Ensure borders print correctly */
+    table,
+    table tr,
+    table th,
+    table td {
+        border: 1px solid #000 !important;
+    }
+}
