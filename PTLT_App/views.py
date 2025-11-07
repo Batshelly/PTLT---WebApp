@@ -2399,8 +2399,9 @@ def generate_attendance_docx(request, schedule_id):
         students = list(Account.objects.filter(
             course_section=class_schedule.course_section, 
             role='Student'
-        ).order_by('last_name', 'first_name')[:40])
+        ).order_by('last_name', 'first_name').distinct('last_name', 'first_name')[:40])
         logger.error(f"✓ {len(students)} students")
+
 
 
         attendance_dates = list(AttendanceRecord.objects.filter(
@@ -2488,7 +2489,7 @@ def generate_attendance_docx(request, schedule_id):
                                 
                                 if '/' in text and len(text) <= 10 and text[0].isdigit():
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(7)
+                                        run.font.size = Pt(8)
                                 
                                 elif ' - ' in text and ':' in text:
                                     for run in paragraph.runs:
