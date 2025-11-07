@@ -2486,35 +2486,32 @@ def generate_attendance_docx(request, schedule_id):
                 if placeholder in paragraph.text:
                     paragraph.text = paragraph.text.replace(placeholder, str(value))
 
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        cell_text = cell.text
-                        if '{{' in cell_text:
-                            for paragraph in cell.paragraphs:
-                                text = paragraph.text
-                                
-                                for key, value in replacements.items():
-                                    if key in text:
-                                        text = text.replace(key, value)
-                                
-                                if text != paragraph.text:
-                                    paragraph.text = text
-                                    
-                                    if '/' in text and len(text) <= 10 and text[0].isdigit():
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(8)
-                                    
-                                    elif len(text) > 25:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(7)
-                                    elif len(text) > 20:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(8)
-                                    elif len(text) > 15:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(9)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        
+                        for key, value in replacements.items():
+                            placeholder = f'{{{{{key}}}}}'
+                            if placeholder in paragraph.text:
+                                paragraph.text = paragraph.text.replace(placeholder, str(value))
+                        
+                       
+                        for run in paragraph.runs:
+                            text = run.text.strip()
 
+                            if '/' in text and text.count('/') == 1:
+                                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                run.font.size = Pt(12)
+
+                            elif len(text) > 25:
+                                run.font.size = Pt(8)
+                            elif len(text) > 20:
+                                run.font.size = Pt(9)
+                            elif len(text) > 15:
+                                run.font.size = Pt(10)
+                            else:
+                                run.font.size = Pt(11)
 
         buffer = BytesIO()
         doc.save(buffer)
