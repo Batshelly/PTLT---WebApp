@@ -2471,7 +2471,7 @@ def generate_attendance_docx(request, schedule_id):
             else:
                 replacements[f'date{i}'] = ''
 
-        #
+      
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
 
         if not os.path.exists(template_path):
@@ -2479,7 +2479,7 @@ def generate_attendance_docx(request, schedule_id):
 
         doc = Document(template_path)
 
-        
+       
         for paragraph in doc.paragraphs:
             for key, value in replacements.items():
                 placeholder = f'{{{{{key}}}}}'  # Creates {{key}}
@@ -2496,7 +2496,7 @@ def generate_attendance_docx(request, schedule_id):
                             if placeholder in paragraph.text:
                                 paragraph.text = paragraph.text.replace(placeholder, str(value))
                         
-                        # FORMAT DATES AND NAMES
+                       
                         for run in paragraph.runs:
                             text = run.text.strip()
 
@@ -2511,7 +2511,7 @@ def generate_attendance_docx(request, schedule_id):
                             elif len(text) > 15:
                                 run.font.size = Pt(10)
                             else:
-                                run.font.size = Pt()
+                                run.font.size = Pt(11)
 
         buffer = BytesIO()
         doc.save(buffer)
