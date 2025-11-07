@@ -2471,7 +2471,7 @@ def generate_attendance_docx(request, schedule_id):
             else:
                 replacements[f'date{i}'] = ''
 
-        # ✨ FIX 1: CORRECTED PATH
+        #
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
 
         if not os.path.exists(template_path):
@@ -2479,7 +2479,7 @@ def generate_attendance_docx(request, schedule_id):
 
         doc = Document(template_path)
 
-        # ✨ FIX 2: REPLACE {{DOUBLE BRACES}} FORMAT
+        
         for paragraph in doc.paragraphs:
             for key, value in replacements.items():
                 placeholder = f'{{{{{key}}}}}'  # Creates {{key}}
@@ -2490,19 +2490,19 @@ def generate_attendance_docx(request, schedule_id):
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        # ✨ FIX 2: REPLACE {{DOUBLE BRACES}} IN TABLES
+                        
                         for key, value in replacements.items():
                             placeholder = f'{{{{{key}}}}}'
                             if placeholder in paragraph.text:
                                 paragraph.text = paragraph.text.replace(placeholder, str(value))
                         
-                        # ✨ FORMAT DATES AND NAMES
+                        # FORMAT DATES AND NAMES
                         for run in paragraph.runs:
                             text = run.text.strip()
 
                             if '/' in text and text.count('/') == 1:
                                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                run.font.size = Pt(12)
+                                run.font.size = Pt(8)
 
                             elif len(text) > 25:
                                 run.font.size = Pt(8)
@@ -2511,7 +2511,7 @@ def generate_attendance_docx(request, schedule_id):
                             elif len(text) > 15:
                                 run.font.size = Pt(10)
                             else:
-                                run.font.size = Pt(11)
+                                run.font.size = Pt()
 
         buffer = BytesIO()
         doc.save(buffer)
