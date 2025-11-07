@@ -189,7 +189,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Session configuration (applies to both development and production)
-SESSION_COOKIE_AGE = 60  # 30 minutes in seconds
+SESSION_COOKIE_AGE = 3600  # 30 minutes in seconds
 SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser closes
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'  # Better performance
@@ -203,7 +203,7 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
 
     # Session timeout configuration
-    SESSION_COOKIE_AGE = 60  # 30 minutes in seconds
+    SESSION_COOKIE_AGE = 3600  # 30 minutes in seconds
     SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
     SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser close
 # Logging
