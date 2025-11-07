@@ -1055,7 +1055,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Account, ClassSchedule, CourseSection
 @csrf_exempt
-@instructororadminrequired
+@instructor_or_admin_required
 def import_class_schedule(request):
     """Import or UPDATE class schedules, students, AND attendance records from CSV"""
     
