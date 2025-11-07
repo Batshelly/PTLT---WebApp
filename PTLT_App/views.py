@@ -2492,7 +2492,7 @@ def generate_attendance_docx(request, schedule_id):
                                 
                                 elif ' - ' in text and ':' in text:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(9)
+                                        run.font.size = Pt(7)
                                 
                                 elif len(text) > 25:
                                     for run in paragraph.runs:
