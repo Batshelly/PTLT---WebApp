@@ -2396,9 +2396,9 @@ def generate_attendance_docx(request, schedule_id):
         
         students_qs = Account.objects.filter(
             course_section=class_schedule.course_section,
-            course=class_schedule.course_section.course,
             role='Student'
         ).order_by('last_name', 'first_name')
+
         
         seen_names = set()
         students = []
