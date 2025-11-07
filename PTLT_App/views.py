@@ -2368,7 +2368,6 @@ def generate_attendance_docx(request, schedule_id):
         from django.conf import settings
         import re
 
-
         date_range = request.GET.get('date_range')
         if not date_range:
             logger.error("✗ No date range provided")
@@ -2387,17 +2386,17 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(f"✗ Invalid date: {str(e)}")
             return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
 
-
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         if not os.path.exists(template_path):
             return HttpResponse("Template not found", status=500)
         doc = Document(template_path)
         logger.error("✓ Template loaded")
 
-
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        
         students_qs = Account.objects.filter(
-            course_section=class_schedule.course_section, 
+            course_section=class_schedule.course_section,
+            course=class_schedule.course_section.course,
             role='Student'
         ).order_by('last_name', 'first_name')
         
@@ -2410,10 +2409,8 @@ def generate_attendance_docx(request, schedule_id):
                 students.append(student)
                 if len(students) >= 40:
                     break
-                    
+        
         logger.error(f"✓ {len(students)} students")
-
-
 
         attendance_dates = list(AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
@@ -2422,19 +2419,17 @@ def generate_attendance_docx(request, schedule_id):
         
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
-            status__in=['Present', 'Late'],
             date__range=[start_date, end_date]
         ).select_related('student')
-
 
         attendance_data = defaultdict(lambda: defaultdict(dict))
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
                 'time_in': record.time_in,
-                'time_out': record.time_out
+                'time_out': record.time_out,
+                'status': record.status
             }
         logger.error(f"✓ {len(attendance_dates)} dates")
-
 
         replacements = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
@@ -2445,13 +2440,11 @@ def generate_attendance_docx(request, schedule_id):
             '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
         }
 
-
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 replacements[f'{{{{date{i}}}}}'] = attendance_dates[i-1].strftime('%m/%d/%Y')
             else:
                 replacements[f'{{{{date{i}}}}}'] = ''
-
 
         time_cells = set()
         for i in range(1, 41):
@@ -2466,12 +2459,13 @@ def generate_attendance_docx(request, schedule_id):
                         date = attendance_dates[j - 1]
                         if date in attendance_data[student.id]:
                             att = attendance_data[student.id][date]
-                            time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
-                            time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                            if time_in_str and time_out_str:
-                                replacements[key] = f"{time_in_str} - {time_out_str}"
-                                time_cells.add(key)
-                                continue
+                            if att['status'] in ['Present', 'Late']:
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                if time_in_str and time_out_str:
+                                    replacements[key] = f"{time_in_str} - {time_out_str}"
+                                    time_cells.add(key)
+                                    continue
                     replacements[key] = ''
             else:
                 replacements[f'{{{{student{i}_name}}}}'] = ''
@@ -2479,9 +2473,7 @@ def generate_attendance_docx(request, schedule_id):
                 for j in range(1, 9):
                     replacements[f'{{{{student{i}_time{j}}}}}'] = ''
 
-
         logger.error(f"✓ Built {len(replacements)} replacements")
-
 
         for table in doc.tables:
             for row in table.rows:
@@ -2516,18 +2508,14 @@ def generate_attendance_docx(request, schedule_id):
                                     for run in paragraph.runs:
                                         run.font.size = Pt(9)
 
-
         logger.error("✓ Replacements complete")
-
 
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
 
-
         filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
         logger.error(f"✓ Complete: {filename}")
-
 
         response = HttpResponse(
             buffer.read(),
@@ -2536,15 +2524,11 @@ def generate_attendance_docx(request, schedule_id):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
-
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
-
-
-
 
 
 # for pdf preview also
