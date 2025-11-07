@@ -2396,11 +2396,23 @@ def generate_attendance_docx(request, schedule_id):
 
 
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
-        students = list(Account.objects.filter(
+        students_qs = Account.objects.filter(
             course_section=class_schedule.course_section, 
             role='Student'
-        ).order_by('last_name', 'first_name')[:40])
+        ).order_by('last_name', 'first_name')
+        
+        seen_names = set()
+        students = []
+        for student in students_qs:
+            full_name = f"{student.last_name},{student.first_name}"
+            if full_name not in seen_names:
+                seen_names.add(full_name)
+                students.append(student)
+                if len(students) >= 40:
+                    break
+                    
         logger.error(f"✓ {len(students)} students")
+
 
 
         attendance_dates = list(AttendanceRecord.objects.filter(
