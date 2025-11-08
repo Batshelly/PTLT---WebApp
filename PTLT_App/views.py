@@ -2460,16 +2460,22 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(traceback.format_exc())
             return HttpResponse(f"<h3>Error loading attendance</h3><p>{str(e)}</p>", status=500)
         
-        # Get ALL students in the course section
+        # FIXED: Get unique students in the course section (MySQL compatible)
         try:
-            students = list(
-                Account.objects.filter(
-                    course_section=class_schedule.course_section,
-                    role='Student'
-                ).order_by('last_name', 'first_name')
-            )
+            all_students = Account.objects.filter(
+                course_section=class_schedule.course_section,
+                role='Student'
+            ).order_by('user_id', 'last_name', 'first_name')
             
-            logger.error(f"Found {len(students)} students in course section")
+            # Remove duplicates by user_id
+            seen_user_ids = set()
+            students = []
+            for student in all_students:
+                if student.user_id not in seen_user_ids:
+                    seen_user_ids.add(student.user_id)
+                    students.append(student)
+            
+            logger.error(f"Found {len(students)} unique students in course section")
         except Exception as e:
             logger.error(f"ERROR loading students: {str(e)}")
             import traceback
@@ -2589,6 +2595,7 @@ def generate_attendance_docx(request, schedule_id):
         error_trace = traceback.format_exc()
         logger.error(error_trace)
         return HttpResponse(f"<h3>Unexpected Error</h3><pre>{error_trace}</pre>", status=500)
+
 
 
 
