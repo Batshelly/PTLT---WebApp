@@ -149,7 +149,7 @@
                         </tr>
                         <tr class="bg-white">
                             {% for date in date_headers %}
-                                <th class="date-th">{{ date|date:"m/d" }}</th>
+                                <th class="date-th">{{ date|date:"m/d/Y" }}</th>
                             {% endfor %}
                             {% for i in num_empty_date_columns %}
                                 <th class="date-th"></th>

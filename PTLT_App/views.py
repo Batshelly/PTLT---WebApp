@@ -747,35 +747,48 @@ def reset_password(request, encoded_email, token):
 
 @instructor_required
 def student_attendance_records(request):
-    # Get logged-in instructor's Account entry
     try:
         instructor_account = Account.objects.get(email=request.user.email, role='Instructor')
     except Account.DoesNotExist:
-        return render(request, "error.html", {"message": "Instructor account not found"})
+        return render(request, 'error.html', {'message': 'Instructor account not found'})
 
-    # Subjects/Courses taught by this instructor
     schedules = ClassSchedule.objects.filter(professor=instructor_account)
-
-    selected_schedule_id = request.GET.get("schedule")
-    selected_date_range = request.GET.get("date_range")
+    selected_schedule_id = request.GET.get('schedule')
+    selected_date_range = request.GET.get('date_range')
     date_ranges = []
     attendance_table = []
 
     if selected_schedule_id:
-        # Fetch unique attendance dates for selected class schedule
+        # Get all attendance dates for this schedule
         attendance_dates = AttendanceRecord.objects.filter(
             class_schedule_id=selected_schedule_id
-        ).values_list("date", flat=True).distinct().order_by("date")
-
+        ).values_list('date', flat=True).distinct().order_by('date')
         attendance_dates = list(attendance_dates)
+        
+        # Get schedule object to check days
+        try:
+            schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
+            
+            # Filter dates by schedule days (MWF, TTH, etc.)
+            filtered_dates = []
+            schedule_days = schedule_obj.day_list  # Returns ['Monday', 'Wednesday', 'Friday']
+            
+            for date in attendance_dates:
+                day_name = date.strftime('%A')  # Get full day name (e.g., 'Monday')
+                if day_name in schedule_days:
+                    filtered_dates.append(date)
+            
+            attendance_dates = filtered_dates
+        except ClassSchedule.DoesNotExist:
+            pass
 
         # Group into 8-day ranges for the filter dropdown
         for i in range(0, len(attendance_dates), 8):
             start_date = attendance_dates[i]
             end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
             date_ranges.append({
-                "value": f"{start_date}_to_{end_date}",
-                "label": f"{start_date.strftime('%B %d, %Y')} - {end_date.strftime('%B %d, %Y')}"
+                'value': f"{start_date}_to_{end_date}",
+                'label': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
             })
 
         if selected_date_range:
@@ -796,12 +809,12 @@ def student_attendance_records(request):
                 # Get schedule object once
                 schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
 
-                # Get students in the same course_section as the schedule
+                # Get students in the same course/section as the schedule
                 students_in_schedule = Account.objects.filter(
                     course_section_id=schedule_obj.course_section_id
                 ).order_by('last_name', 'first_name')
 
-                # Map attendance data: {student_id: {date: {'status': status, 'time_in': time_in, 'time_out': time_out}}}
+                # Map attendance data: student_id -> date -> {status, time_in, time_out}
                 attendance_data = defaultdict(lambda: defaultdict(dict))
                 for record in attendance_qs:
                     attendance_data[record.student.id][record.date] = {
@@ -810,19 +823,29 @@ def student_attendance_records(request):
                         'time_out': record.time_out
                     }
 
-                # Build date headers (max 8 dates)
-                date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
+                # Build date headers (max 8 dates) - FILTERED by schedule days
+                date_headers = []
+                schedule_days = schedule_obj.day_list
+                
+                for d in attendance_dates:
+                    if start_date <= d <= end_date:
+                        day_name = d.strftime('%A')
+                        if day_name in schedule_days:
+                            date_headers.append(d)
+                            if len(date_headers) >= 8:
+                                break
+
                 num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
                 num_empty_date_columns = []
                 for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
+                    num_empty_date_columns.append(i)
 
-
+                # Build attendance table
                 attendance_table = []
                 for student in students_in_schedule:
                     course_section_for_student = student.course_section
-                    # Build dates_statuses as a list of dicts containing all attendance info
+                    
+                    # Build dates/statuses as a list of dicts containing all attendance info
                     dates_statuses = []
                     for date in date_headers:
                         attendance_info = attendance_data[student.id].get(date, {})
@@ -831,7 +854,7 @@ def student_attendance_records(request):
                             'time_in': attendance_info.get('time_in', ''),
                             'time_out': attendance_info.get('time_out', '')
                         })
-                    
+
                     # Pad with empty dicts to always have 8 items
                     while len(dates_statuses) < 8:
                         dates_statuses.append({
@@ -840,52 +863,41 @@ def student_attendance_records(request):
                             'time_out': ''
                         })
 
-                    # DEBUG: Check the length
                     print(f"Student {student.user_id}: dates_statuses length = {len(dates_statuses)}")
 
                     row = {
-                        "student_id": student.user_id, 
-                        "name": f"{student.first_name} {student.last_name}",
-                        "sex": student.sex,
-                        "course": course_section_for_student,
-                        "subject": schedule_obj.course_code,
-                        "room": schedule_obj.room_assignment,
-                        "dates": dates_statuses,  # Always 8 items now
+                        'student_id': student.user_id,
+                        'name': f"{student.first_name} {student.last_name}",
+                        'sex': student.sex,
+                        'course': course_section_for_student,
+                        'subject': schedule_obj.course_code,
+                        'room': schedule_obj.room_assignment,
+                        'dates': dates_statuses,  # Always 8 items now
                     }
                     attendance_table.append(row)
 
                 context = {
-                    "schedules": schedules,
-                    "date_ranges": date_ranges,
-                    "selected_schedule_id": selected_schedule_id,
-                    "selected_date_range": selected_date_range,
-                    "attendance_table": attendance_table,
-                    "date_headers": date_headers,
-                    "num_empty_date_columns": num_empty_date_columns,
+                    'schedules': schedules,
+                    'date_ranges': date_ranges,
+                    'selected_schedule_id': selected_schedule_id,
+                    'selected_date_range': selected_date_range,
+                    'attendance_table': attendance_table,
+                    'date_headers': date_headers,
+                    'num_empty_date_columns': num_empty_date_columns,
                 }
-                return render(request, "student_attendance_records.html", context)
+                return render(request, 'student_attendance_records.html', context)
 
-        # If no valid date range selected or dates invalid, still render with schedules & date ranges
-        context = {
-            "schedules": schedules,
-            "date_ranges": date_ranges,
-            "selected_schedule_id": selected_schedule_id,
-            "attendance_table": [],
-            "date_headers": [],
-            "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
-        }
-        return render(request, "student_attendance_records.html", context)
-
-    # If no schedule selected at all, render with just schedules and empty date ranges
+    # If no valid date range selected or dates invalid, still render with schedules & date ranges
     context = {
-        "schedules": schedules,
-        "date_ranges": date_ranges,
-        "selected_schedule_id": selected_schedule_id,
-        "attendance_table": [],
-        "date_headers": [],
-        "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
+        'schedules': schedules,
+        'date_ranges': date_ranges,
+        'selected_schedule_id': selected_schedule_id,
+        'attendance_table': [],
+        'date_headers': [],
+        'num_empty_date_columns': [0, 1, 2, 3, 4, 5, 6, 7],
     }
-    return render(request, "student_attendance_records.html", context)
+    return render(request, 'student_attendance_records.html', context)
+
 
 
 
@@ -2227,111 +2239,128 @@ def mobile_update_account(request, user_id):
 @require_http_methods(["GET"])
 def get_attendance_data_api(request):
     """API endpoint to get attendance data as JSON"""
-    
     try:
         schedule_id = request.GET.get('schedule')
         date_range = request.GET.get('date_range')
-        
+
         if not schedule_id:
             return JsonResponse({'error': 'No schedule selected'}, status=400)
-        
+
         try:
             class_schedule = ClassSchedule.objects.get(id=schedule_id)
         except ClassSchedule.DoesNotExist:
             return JsonResponse({'error': 'Class schedule not found'}, status=404)
+
+        # Get all attendance dates for this schedule
+        attendance_dates = list(
+            AttendanceRecord.objects.filter(class_schedule=class_schedule)
+            .values_list('date', flat=True)
+            .distinct()
+            .order_by('date')
+        )
         
-        # Get all date ranges
-        attendance_dates = list(AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).values_list('date', flat=True).distinct().order_by('date'))
+        # Filter dates by schedule days (MWF, TTH, etc.)
+        filtered_dates = []
+        schedule_days = class_schedule.day_list  # Returns ['Monday', 'Wednesday', 'Friday']
         
+        for date in attendance_dates:
+            day_name = date.strftime('%A')  # Get full day name (e.g., 'Monday')
+            if day_name in schedule_days:
+                filtered_dates.append(date)
+        
+        attendance_dates = filtered_dates
+
+        # Group into 8-day ranges for the filter dropdown
         date_ranges = []
         for i in range(0, len(attendance_dates), 8):
             start_date = attendance_dates[i]
             end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
             date_ranges.append({
-                'value': f'{start_date}_to_{end_date}',
-                'label': f'{start_date.strftime("%b %d, %Y")} - {end_date.strftime("%b %d, %Y")}'
+                'value': f"{start_date}_{end_date}",
+                'label': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
             })
-        
-        # If date range provided, build attendance table
-        if date_range:
-            try:
-                start_str, end_str = date_range.split('_to_')
-                start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
-                start_date = end_date = None
-        else:
-            start_date = end_date = None
-        
-        # Get date headers
-        if start_date and end_date:
-            dates_in_range = list(AttendanceRecord.objects.filter(
-                class_schedule=class_schedule,
-                date__range=[start_date, end_date]
-            ).values_list('date', flat=True).distinct().order_by('date')[:8])
-        else:
-            dates_in_range = attendance_dates[:8]
-        
-        date_headers = [d.strftime('%m/%d') for d in dates_in_range]
-        
-        # Get students and attendance
-        attendance_table = []
-        students = Account.objects.filter(
-            course_section=class_schedule.course_section,
-            role='Student'
-        ).order_by('last_name', 'first_name')
-        
-        # Build attendance data map
-        attendance_data = defaultdict(lambda: defaultdict(dict))
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).select_related('student')
-        
-        for record in attendance_qs:
-            attendance_data[record.student.id][record.date] = {
-                'time_in': record.time_in,
-                'time_out': record.time_out,
-                'status': record.status
-            }
-        
-        # Build attendance table
-        for student in students:
-            student_data = {
-                'name': f'{student.last_name}, {student.first_name}',
-                'sex': student.sex[0] if student.sex else 'M',
-                'dates': []
-            }
-            
-            for date in dates_in_range:
-                if date in attendance_data[student.id]:
-                    att = attendance_data[student.id][date]
-                    student_data['dates'].append({
-                        'time_in': att['time_in'].strftime('%H:%M') if att['time_in'] else '',
-                        'time_out': att['time_out'].strftime('%H:%M') if att['time_out'] else '',
-                        'status': att['status']
-                    })
-                else:
-                    student_data['dates'].append({
-                        'time_in': '',
-                        'time_out': '',
-                        'status': ''
-                    })
-            
-            attendance_table.append(student_data)
-        
+
         # Get class data
         instructor_account = class_schedule.professor
         class_data = {
             'subject': class_schedule.course_title,
-            'faculty_name': f'{instructor_account.first_name} {instructor_account.last_name}' if instructor_account else 'TBA',
+            'faculty_name': f"{instructor_account.first_name} {instructor_account.last_name}" if instructor_account else "TBA",
             'course': class_schedule.course_code,
             'room': class_schedule.room_assignment,
-            'year_section': class_schedule.course_section.section_code if class_schedule.course_section else 'N/A',
-            'schedule': f'{class_schedule.days} {class_schedule.time_in.strftime("%H:%M")}-{class_schedule.time_out.strftime("%H:%M")}'
+            'year_section': class_schedule.course_section.course_section if class_schedule.course_section else "N/A",
+            'schedule': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
         }
+
+        # If date range provided, build attendance table
+        attendance_table = []
+        date_headers = []
         
+        if date_range:
+            try:
+                start_str, end_str = date_range.split("_")
+                start_date = parse_date(start_str)
+                end_date = parse_date(end_str)
+            except (ValueError, TypeError):
+                start_date = end_date = None
+
+            if start_date and end_date:
+                # Filter dates within range AND matching schedule days
+                dates_in_range = []
+                for d in attendance_dates:
+                    if start_date <= d <= end_date:
+                        day_name = d.strftime('%A')
+                        if day_name in schedule_days:
+                            dates_in_range.append(d)
+                            if len(dates_in_range) >= 8:
+                                break
+                
+                # Format date headers with YEAR
+                date_headers = [d.strftime('%m/%d/%Y') for d in dates_in_range]
+
+                # Get students
+                students = Account.objects.filter(
+                    course_section=class_schedule.course_section,
+                    role='Student'
+                ).order_by('last_name', 'first_name')
+
+                # Build attendance data map
+                attendance_data = defaultdict(lambda: defaultdict(dict))
+                attendance_qs = AttendanceRecord.objects.filter(
+                    class_schedule=class_schedule
+                ).select_related('student')
+                
+                for record in attendance_qs:
+                    attendance_data[record.student.id][record.date] = {
+                        'time_in': record.time_in,
+                        'time_out': record.time_out,
+                        'status': record.status
+                    }
+
+                # Build attendance table
+                for student in students:
+                    student_data = {
+                        'name': f"{student.last_name}, {student.first_name}",
+                        'sex': student.sex[0] if student.sex else 'M',
+                        'dates': []
+                    }
+
+                    for date in dates_in_range:
+                        if date in attendance_data[student.id]:
+                            att = attendance_data[student.id][date]
+                            student_data['dates'].append({
+                                'time_in': att['time_in'].strftime('%H:%M') if att['time_in'] else '',
+                                'time_out': att['time_out'].strftime('%H:%M') if att['time_out'] else '',
+                                'status': att['status']
+                            })
+                        else:
+                            student_data['dates'].append({
+                                'time_in': '',
+                                'time_out': '',
+                                'status': ''
+                            })
+
+                    attendance_table.append(student_data)
+
         return JsonResponse({
             'class_data': class_data,
             'date_ranges': date_ranges,
@@ -2339,7 +2368,7 @@ def get_attendance_data_api(request):
             'attendance_table': attendance_table,
             'student_count': len(attendance_table)
         })
-        
+
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -2348,6 +2377,7 @@ def get_attendance_data_api(request):
             'error': f'Server error: {str(e)}',
             'trace': error_trace
         }, status=500)
+
 
 
 # for Docx Download
