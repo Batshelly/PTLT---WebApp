@@ -153,6 +153,10 @@
                 <button class="btn btn-sm btn-danger" onclick="clearAttendance()">
                     <i class="bi bi-trash"></i> Clear Attendance
                 </button>
+                <!-- NEW: Clear Students Button TEMPORARY! -->
+                <button class="btn btn-sm btn-danger" onclick="clearStudents()" title="Delete all student accounts">
+                    <i class="bi bi-person-x"></i> Clear Students
+                </button>
             </div>
         </div>
         
@@ -569,6 +573,38 @@ function clearAttendance() {
         alert('❌ Failed to clear attendance records');
     });
 }
+
+// Clear Students Function TEMPORARY!
+function clearStudents() {
+    if (!confirm('⚠️ Are you sure you want to delete ALL student accounts? This cannot be undone!')) {
+        return;
+    }
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    fetch('/clear_students/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(`✅ Successfully deleted ${data.count} student accounts!`);
+            location.reload();
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        alert('❌ Failed to clear student accounts');
+    });
+}
+
 
 </script>
 {% endblock %}

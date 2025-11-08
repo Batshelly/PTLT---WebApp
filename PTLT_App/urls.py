@@ -29,5 +29,6 @@ urlpatterns = [
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
     path('attendance/docx/<int:schedule_id>/', views.generate_attendance_docx, name='generate_attendance_docx'),
-    path('clear_attendance/', views.clear_attendance, name='clear_attendance'),
+    path('clear_attendance/', views.clear_attendance, name='clear_attendance'), #TEMPORARY!
+    path('clear_students/', views.clear_students, name='clear_students'),  #TEMPORARY!
 ]

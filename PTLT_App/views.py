@@ -2724,3 +2724,26 @@ def clear_attendance(request):
             'message': str(e)
         }, status=500)
 
+# TEMPORARY! delete student accounts
+@instructor_or_admin_required
+@require_POST
+def clear_students(request):
+    """Delete all student accounts"""
+    try:
+        # Count students before deletion
+        count = Account.objects.filter(role='Student').count()
+        
+        # Delete all student accounts
+        Account.objects.filter(role='Student').delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': count,
+            'message': f'Deleted {count} student accounts'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
