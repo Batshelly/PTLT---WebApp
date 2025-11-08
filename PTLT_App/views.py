@@ -2695,3 +2695,32 @@ def get_attendance_data_api(request):
         return JsonResponse({'error': 'Class schedule not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_protect
+
+
+# TEMPORARY! delete attendance record
+@instructor_or_admin_required
+@require_POST
+def clear_attendance(request):
+    """Clear all attendance records"""
+    try:
+        # Count records before deletion
+        count = AttendanceRecord.objects.all().count()
+        
+        # Delete all attendance records
+        AttendanceRecord.objects.all().delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': count,
+            'message': f'Deleted {count} attendance records'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+

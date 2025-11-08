@@ -149,8 +149,13 @@
                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
                     <i class="bi bi-file-earmark-spreadsheet p4"></i> Import CSV
                 </button>
+                 <!-- NEW: Clear Attendance Button TEMPORARY! -->
+                <button class="btn btn-sm btn-danger" onclick="clearAttendance()">
+                    <i class="bi bi-trash"></i> Clear Attendance
+                </button>
             </div>
         </div>
+        
 
         <!-- DROPDOWNS -->
         <div class="d-flex flex-column flex-sm-row justify-content-start align-items-stretch gap-3 mb-3 d-print-none">
@@ -533,5 +538,37 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
         resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
     });
 });
+
+// Clear Attendance Function TEMPORARY!
+function clearAttendance() {
+    if (!confirm('⚠️ Are you sure you want to delete ALL attendance records? This cannot be undone!')) {
+        return;
+    }
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    fetch('/clear_attendance/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(`✅ Successfully deleted ${data.count} attendance records!`);
+            location.reload(); // Refresh the page
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        alert('❌ Failed to clear attendance records');
+    });
+}
+
 </script>
 {% endblock %}
