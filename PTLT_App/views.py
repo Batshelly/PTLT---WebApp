@@ -2367,6 +2367,7 @@ def generate_attendance_docx(request, schedule_id):
         from datetime import datetime
         from django.conf import settings
         import re
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
 
         date_range = request.GET.get('date_range')
         if not date_range:
@@ -2489,8 +2490,13 @@ def generate_attendance_docx(request, schedule_id):
                             
                             if text != paragraph.text:
                                 paragraph.text = text
+                                    
+                                if text.strip() in ['M', 'F']:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(11)
                                 
-                                if '/' in text and len(text) <= 10 and text[0].isdigit():
+                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
                                     for run in paragraph.runs:
                                         run.font.size = Pt(8)
                                 
