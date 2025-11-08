@@ -2429,7 +2429,7 @@ def generate_attendance_docx(request, schedule_id):
             return HttpResponse("<h3>Error</h3><p>Class schedule not found</p>", status=404)
         
         # Check template path
-        template_path = os.path.join(settings.BASE_DIR, 'PTLTApp', 'document_templates', 'attendance_template.docx')
+        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template')
         logger.error(f"Template path: {template_path}")
         
         if not os.path.exists(template_path):
