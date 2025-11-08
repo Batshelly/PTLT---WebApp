@@ -2494,7 +2494,7 @@ def generate_attendance_docx(request, schedule_id):
                                 if text.strip() in ['M', 'F']:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(11)
+                                        run.font.size = Pt(9)
                                 
                                 elif '/' in text and len(text) <= 10 and text[0].isdigit():
                                     for run in paragraph.runs:
