@@ -71,6 +71,8 @@
   document.addEventListener("DOMContentLoaded", function () {
     const helpImage = document.getElementById("helpImage");
     const helpModal = document.getElementById("helpGuideModal");
+    const prevBtn = document.getElementById("prevHelp");
+    const nextBtn = document.getElementById("nextHelp");
     
     // Read help steps from JSON script tag
     let helpSteps = [];
@@ -97,6 +99,39 @@
       if (helpSteps.length > 0) {
         helpImage.src = helpSteps[currentStep];
       }
+      updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      // Disable and style Previous button if at first image
+      if (currentStep === 0) {
+        prevBtn.disabled = true;
+        prevBtn.classList.remove('btn-secondary');
+        prevBtn.classList.add('btn-light');
+        prevBtn.style.opacity = '0.5';
+        prevBtn.style.cursor = 'not-allowed';
+      } else {
+        prevBtn.disabled = false;
+        prevBtn.classList.remove('btn-light');
+        prevBtn.classList.add('btn-secondary');
+        prevBtn.style.opacity = '1';
+        prevBtn.style.cursor = 'pointer';
+      }
+
+      // Disable and style Next button if at last image
+      if (currentStep === helpSteps.length - 1) {
+        nextBtn.disabled = true;
+        nextBtn.classList.remove('btn-primary');
+        nextBtn.classList.add('btn-light');
+        nextBtn.style.opacity = '0.5';
+        nextBtn.style.cursor = 'not-allowed';
+      } else {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('btn-light');
+        nextBtn.classList.add('btn-primary');
+        nextBtn.style.opacity = '1';
+        nextBtn.style.cursor = 'pointer';
+      }
     }
 
     // Create modal instance only once
@@ -120,14 +155,14 @@
       document.body.style.paddingRight = '';
     }
 
-    document.getElementById("prevHelp").addEventListener("click", function () {
+    prevBtn.addEventListener("click", function () {
       if (currentStep > 0) {
         currentStep--;
         updateImage();
       }
     });
 
-    document.getElementById("nextHelp").addEventListener("click", function () {
+    nextBtn.addEventListener("click", function () {
       if (currentStep < helpSteps.length - 1) {
         currentStep++;
         updateImage();
@@ -135,7 +170,7 @@
     });
 
     document.getElementById("helpBtn").addEventListener("click", function () {
-      updateImage(); // Set initial image before showing modal
+      updateImage(); // Set initial image and button states before showing modal
       const modal = getModalInstance();
       modal.show();
     });
