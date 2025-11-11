@@ -1053,21 +1053,15 @@ import csv
 import io
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from .models import Account, ClassSchedule, CourseSection, AttendanceRecord
+from datetime import datetime
 
 @csrf_exempt
 @instructor_or_admin_required
+@require_http_methods(["POST"])
 def import_class_schedule(request):
-    """Import/UPDATE attendance records ONLY - verify student & course, no creation"""
-    
-    if request.method != 'POST':
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Only POST method allowed',
-            'imported': 0,
-            'skipped': 0,
-            'errors': ['Only POST method allowed']
-        }, status=405)
+    """Import attendance records from biometric CSV export"""
     
     if 'csv_file' not in request.FILES:
         return JsonResponse({
@@ -1088,46 +1082,79 @@ def import_class_schedule(request):
             'attendance_created': 0,
             'attendance_updated': 0,
             'skipped': 0,
+            'student_not_found': 0,
+            'course_not_found': 0,
+            'empty_rows': 0,
             'errors': []
         }
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # ✨ REQUIRED CSV FIELDS
+                # ✨ EXTRACT FIELDS FROM YOUR CSV FORMAT
                 course_code = row.get('course_code', '').strip()
                 student_id = row.get('student_id', '').strip()
                 attendance_date_str = row.get('attendance_date', '').strip()
                 attendance_time_in_str = row.get('attendance_time_in', '').strip()
                 attendance_time_out_str = row.get('attendance_time_out', '').strip()
-                attendance_status = row.get('attendance_status', 'Present').strip()
+                attendance_status = row.get('attendance_status', 'Present').strip().title()
+                
+                # ✨ SKIP COMPLETELY EMPTY ROWS
+                if not any([course_code, student_id, attendance_date_str, attendance_time_in_str]):
+                    results['empty_rows'] += 1
+                    continue
                 
                 # ✨ VALIDATE REQUIRED FIELDS
                 if not all([course_code, student_id, attendance_date_str, attendance_time_in_str]):
-                    results['errors'].append(f"Line {line_num}: Missing required fields (course_code, student_id, attendance_date, attendance_time_in)")
+                    missing_fields = []
+                    if not course_code: missing_fields.append('course_code')
+                    if not student_id: missing_fields.append('student_id')
+                    if not attendance_date_str: missing_fields.append('attendance_date')
+                    if not attendance_time_in_str: missing_fields.append('attendance_time_in')
+                    
+                    results['errors'].append(f"Line {line_num}: Missing fields: {', '.join(missing_fields)}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 1: VERIFY COURSE CODE EXISTS (DO NOT CREATE)
+                # ✨ STEP 1: VERIFY COURSE CODE EXISTS
                 try:
                     class_schedule = ClassSchedule.objects.get(course_code=course_code)
                 except ClassSchedule.DoesNotExist:
-                    results['errors'].append(f"Line {line_num}: Course code '{course_code}' not found in database")
+                    results['course_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Course '{course_code}' not found")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 2: VERIFY STUDENT EXISTS (DO NOT CREATE)
+                # ✨ STEP 2: VERIFY STUDENT EXISTS (FLEXIBLE ID MATCHING)
+                student = None
                 try:
+                    # Try exact match first
                     student = Account.objects.get(user_id=student_id, role='Student')
                 except Account.DoesNotExist:
-                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found in database")
+                    # Try partial match (e.g., "220352" matches "TUPC-22-0352")
+                    try:
+                        student = Account.objects.filter(
+                            user_id__contains=student_id,
+                            role='Student'
+                        ).first()
+                        
+                        if not student:
+                            # Try reverse: student has "220352", CSV has "TUPC-22-0352"
+                            student = Account.objects.filter(
+                                user_id__in=[student_id[-6:], student_id[-4:]],
+                                role='Student'
+                            ).first()
+                    except:
+                        pass
+                
+                if not student:
+                    results['student_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 3: PARSE ATTENDANCE DATE & TIMES (FLEXIBLE DATE FORMATS)
+                # ✨ STEP 3: PARSE DATE & TIMES (FLEXIBLE FORMATS)
                 try:
-                    from datetime import datetime
-                    
-                    # Try multiple date formats: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY
+                    # Parse date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
                     attendance_date = None
                     for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']:
                         try:
@@ -1137,21 +1164,47 @@ def import_class_schedule(request):
                             continue
                     
                     if not attendance_date:
-                        raise ValueError(f"Date '{attendance_date_str}' doesn't match any supported format (YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)")
+                        raise ValueError(f"Date '{attendance_date_str}' must be YYYY-MM-DD, DD/MM/YYYY, or MM/DD/YYYY")
                     
-                    # Parse times
-                    attendance_time_in = datetime.strptime(attendance_time_in_str, '%H:%M').time()
+                    # Parse time_in (supports H:M and H:M:S)
+                    attendance_time_in = None
+                    for time_format in ['%H:%M:%S', '%H:%M']:
+                        try:
+                            attendance_time_in = datetime.strptime(attendance_time_in_str, time_format).time()
+                            break
+                        except ValueError:
+                            continue
                     
+                    if not attendance_time_in:
+                        raise ValueError(f"Time '{attendance_time_in_str}' must be HH:MM or HH:MM:SS")
+                    
+                    # Parse time_out (optional)
                     attendance_time_out = None
                     if attendance_time_out_str:
-                        attendance_time_out = datetime.strptime(attendance_time_out_str, '%H:%M').time()
+                        for time_format in ['%H:%M:%S', '%H:%M']:
+                            try:
+                                attendance_time_out = datetime.strptime(attendance_time_out_str, time_format).time()
+                                break
+                            except ValueError:
+                                continue
                     
                 except ValueError as e:
-                    results['errors'].append(f"Line {line_num}: Invalid date/time format - {str(e)}")
+                    results['errors'].append(f"Line {line_num}: Invalid date/time - {str(e)}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 4: CREATE OR UPDATE ATTENDANCE RECORD
+                # ✨ STEP 4: NORMALIZE STATUS
+                status_map = {
+                    'LATE': 'Late',
+                    'PRESENT': 'Present',
+                    'ABSENT': 'Absent',
+                    'Late': 'Late',
+                    'Present': 'Present',
+                    'Absent': 'Absent'
+                }
+                normalized_status = status_map.get(attendance_status, 'Present')
+                
+                # ✨ STEP 5: CREATE OR UPDATE ATTENDANCE RECORD
                 attendance_record, created = AttendanceRecord.objects.update_or_create(
                     class_schedule=class_schedule,
                     student=student,
@@ -1161,7 +1214,7 @@ def import_class_schedule(request):
                         'course_section': class_schedule.course_section,
                         'time_in': attendance_time_in,
                         'time_out': attendance_time_out,
-                        'status': attendance_status,
+                        'status': normalized_status,
                         'fingerprint_data': b'',
                     }
                 )
@@ -1177,14 +1230,29 @@ def import_class_schedule(request):
         
         # ✨ DETERMINE STATUS
         total_processed = results['attendance_created'] + results['attendance_updated']
+        
         if total_processed == 0:
-            status_code = 'failed'
+            if results['skipped'] > 0:
+                status_code = 'all_skipped'
+            else:
+                status_code = 'failed'
         elif results['skipped'] == 0:
             status_code = 'ok'
         else:
             status_code = 'partial'
         
-        print(f"Import completed: {total_processed} attendance records processed, {results['skipped']} skipped")
+        # ✨ BUILD SUMMARY MESSAGE
+        message_parts = []
+        if results['student_not_found'] > 0:
+            message_parts.append(f"{results['student_not_found']} students not found")
+        if results['course_not_found'] > 0:
+            message_parts.append(f"{results['course_not_found']} courses not found")
+        if results['empty_rows'] > 0:
+            message_parts.append(f"{results['empty_rows']} empty rows skipped")
+        
+        summary_message = '; '.join(message_parts) if message_parts else 'All records processed successfully'
+        
+        print(f"✅ Import completed: {total_processed} records processed, {results['skipped']} skipped")
         
         return JsonResponse({
             'status': status_code,
@@ -1192,11 +1260,15 @@ def import_class_schedule(request):
             'attendance_created': results['attendance_created'],
             'attendance_updated': results['attendance_updated'],
             'skipped': results['skipped'],
-            'errors': results['errors'][:20]  # Return first 20 errors
+            'student_not_found': results['student_not_found'],
+            'course_not_found': results['course_not_found'],
+            'empty_rows': results['empty_rows'],
+            'message': summary_message,
+            'errors': results['errors'][:20]
         })
         
     except Exception as e:
-        print(f"Error in import_class_schedule: {str(e)}")
+        print(f"❌ Error in import: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -1207,6 +1279,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {str(e)}']
         }, status=500)
+
 
 
 
