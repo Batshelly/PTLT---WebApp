@@ -373,7 +373,7 @@ def verify_login_otp(request):
                 if account.role == 'Admin':
                     return redirect('account_management')
                 elif account.role == 'Instructor':
-                    return redirect('schedule')
+                    return redirect('instructor_schedule')
                 else:
                     messages.error(request, "Unknown user role.")
                     return redirect('login')
@@ -506,7 +506,7 @@ def force_password_change(request):
                 if account.role == 'Admin':
                     return redirect('account_management')
                 elif account.role == 'Instructor':
-                    return redirect('schedule')
+                    return redirect('instructor_schedule')
                 else:
                     return redirect('login')
             
