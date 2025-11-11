@@ -271,9 +271,10 @@
                         <li>Upload the <strong>CSV file exported from your biometric device</strong></li>
                         <li>Only <strong>existing students</strong> and <strong>existing courses</strong> will be processed</li>
                         <li>This will create/update <strong>attendance records only</strong></li>
-                        <li>Student IDs will be matched flexibly (e.g., "545" matches "220545")</li>
+                        <li><strong>Student IDs must match exactly</strong> (including dashes and format)</li>
                     </ul>
                 </div>
+
                 
                 <form id="csvUploadForm" enctype="multipart/form-data">
                     {% csrf_token %}

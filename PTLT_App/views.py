@@ -1061,7 +1061,7 @@ from datetime import datetime
 @instructor_or_admin_required
 @require_http_methods(["POST"])
 def import_class_schedule(request):
-    """Import attendance records from biometric CSV export"""
+    """Import attendance records from biometric CSV export - EXACT MATCH ONLY"""
     
     if 'csv_file' not in request.FILES:
         return JsonResponse({
@@ -1124,31 +1124,17 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 2: VERIFY STUDENT EXISTS (FLEXIBLE ID MATCHING)
-                student = None
+                # ✨ STEP 2: VERIFY STUDENT EXISTS (EXACT MATCH ONLY - NO FLEXIBLE MATCHING)
                 try:
-                    # Try exact match first
                     student = Account.objects.get(user_id=student_id, role='Student')
                 except Account.DoesNotExist:
-                    # Try partial match (e.g., "220352" matches "TUPC-22-0352")
-                    try:
-                        student = Account.objects.filter(
-                            user_id__contains=student_id,
-                            role='Student'
-                        ).first()
-                        
-                        if not student:
-                            # Try reverse: student has "220352", CSV has "TUPC-22-0352"
-                            student = Account.objects.filter(
-                                user_id__in=[student_id[-6:], student_id[-4:]],
-                                role='Student'
-                            ).first()
-                    except:
-                        pass
-                
-                if not student:
                     results['student_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found")
+                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found (exact match required)")
+                    results['skipped'] += 1
+                    continue
+                except Account.MultipleObjectsReturned:
+                    results['student_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Multiple students found with ID '{student_id}'")
                     results['skipped'] += 1
                     continue
                 
@@ -1279,6 +1265,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {str(e)}']
         }, status=500)
+
 
 
 
