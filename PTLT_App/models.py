@@ -134,22 +134,41 @@ class AttendanceRecord(models.Model):
     def __str__(self):
         return f"{self.date} - {self.student.user_id} - {self.status}"
     
+
 class Semester(models.Model):
-    semester_name = models.CharField(max_length=50, default='First Semester')  # NEW
-    school_year = models.CharField(max_length=20, default='2025-2026')  # NEW
+    SEMESTER_CHOICES = [
+        ('First Semester', 'First Semester'),
+        ('Second Semester', 'Second Semester'),
+        ('Summer', 'Summer'),
+    ]
+    
+    semester_name = models.CharField(max_length=50, choices=SEMESTER_CHOICES, default='First Semester')
+    school_year = models.CharField(max_length=20, default='2025-2026')
     start_date = models.DateField()
     end_date = models.DateField()
-    is_active = models.BooleanField(default=True)  # NEW
+    is_active = models.BooleanField(default=True)
     is_archived = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)  # NEW
+    created_at = models.DateTimeField(null=True, blank=True, default=timezone.now)  # FIXED: Changed from auto_now_add=True
+    updated_at = models.DateTimeField(auto_now=True)  # ADDED: For tracking updates
 
-    @property
-    def has_ended(self):  # NEW
-        from django.utils import timezone
-        return timezone.now().date() > self.end_date
+    class Meta:
+        ordering = ['-start_date']
+        unique_together = ['semester_name', 'school_year']
 
     def __str__(self):
         return f"{self.semester_name} ({self.school_year})"
+
+    @property
+    def has_ended(self):
+        return timezone.now().date() > self.end_date
+
+    def save(self, *args, **kwargs):
+        # Deactivate all other semesters when creating a new active one
+        if self.is_active:
+            Semester.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+
+
 
 class AccountUploadNotification(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
