@@ -128,22 +128,22 @@ h2 {
 }
 
 /* ============================================
-   TABLE BORDER FIX - DARKER & THICKER
+   TABLE BORDER FIX - COMPLETE SOLUTION
    ============================================ */
 
-/* Force THICK DARK borders on ALL table elements */
+/* Force borders on ALL table elements */
 table {
   border-collapse: collapse !important;
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 table tr {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 table th,
 table td {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
   min-height: 25px !important;
 }
 
@@ -157,18 +157,18 @@ table td {
 .attendance-table td {
   text-align: center;
   vertical-align: middle;
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
   min-height: 25px !important;
   padding: 4px 8px !important;
 }
 
 /* Force borders on dynamically added content */
 #attendanceTableBody tr {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 #attendanceTableBody td {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
   min-width: 80px !important;
   min-height: 25px !important;
   padding: 4px 8px !important;
@@ -181,35 +181,29 @@ table td {
 }
 
 #dateHeaderRow th {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
   padding: 4px 8px !important;
 }
 
 /* Force Bootstrap table borders */
 .table-bordered {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 .table-bordered th,
 .table-bordered td {
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 /* All tables in attendance document */
 #attendance-doc table {
   border-collapse: collapse !important;
-  border: 2px solid #000000 !important; /* Changed to 2px */
+  border: 1px solid #000 !important;
 }
 
 #attendance-doc table th,
 #attendance-doc table td {
-  border: 2px solid #000000 !important; /* Changed to 2px */
-}
-
-/* Center Sex column */
-.attendance-table tbody tr td:nth-child(3) {
-  text-align: center !important;
-  font-size: 11pt;
+  border: 1px solid #000 !important;
 }
 
 @media print {
@@ -255,11 +249,11 @@ table td {
         page-break-inside: avoid !important;
     }
 
-    /* Ensure borders print correctly - THICKER */
+    /* Ensure borders print correctly */
     table,
     table tr,
     table th,
     table td {
-        border: 2px solid #000000 !important; /* Changed to 2px */
+        border: 1px solid #000 !important;
     }
 }

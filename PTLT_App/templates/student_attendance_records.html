@@ -131,7 +131,68 @@
             font-size: 0.75rem;
         }
     }
+    
+    /* ⭐ FORCE DARK THICK BORDERS ON ALL TABLES ⭐ */
+    #attendance-doc table,
+    #attendance-doc table tr,
+    #attendance-doc table th,
+    #attendance-doc table td {
+        border: 2px solid #000000 !important;
+        border-collapse: collapse !important;
+    }
+    
+    /* Override Bootstrap table borders */
+    .table,
+    .table-bordered {
+        border: 2px solid #000000 !important;
+        border-collapse: collapse !important;
+    }
+    
+    .table-bordered th,
+    .table-bordered td,
+    .table th,
+    .table td {
+        border: 2px solid #000000 !important;
+    }
+    
+    /* Attendance table specific */
+    .attendance-table,
+    .attendance-table th,
+    .attendance-table td {
+        border: 2px solid #000000 !important;
+        text-align: center;
+        vertical-align: middle;
+    }
+    
+    /* Force borders on dynamically generated content */
+    #attendanceTableBody tr,
+    #attendanceTableBody td,
+    #dateHeaderRow th {
+        border: 2px solid #000000 !important;
+    }
+    
+    /* Override Bootstrap's border-dark class */
+    .border-dark {
+        border-color: #000000 !important;
+        border-width: 2px !important;
+    }
+    
+    /* Center Sex column */
+    .attendance-table tbody tr td:nth-child(3) {
+        text-align: center !important;
+    }
+    
+    /* Logo box border */
+    .logo-box {
+        border: 2px solid #000000 !important;
+        width: 120px;
+        height: 120px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
 </style>
+
 
 
 <div class="bg-white p-4 mx-auto shadow-sm rounded">
