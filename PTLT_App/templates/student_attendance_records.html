@@ -261,10 +261,19 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title">📁 Import Class Schedules</h5>
+                <h5 class="modal-title">📁 Import Attendance Records</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong>ℹ️ Note:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Only <strong>existing students</strong> and <strong>existing courses</strong> will be processed</li>
+                        <li>This import will create/update <strong>attendance records only</strong></li>
+                        <li>No new students or courses will be created</li>
+                    </ul>
+                </div>
+                
                 <form id="csvUploadForm" enctype="multipart/form-data">
                     {% csrf_token %}
                     <div class="mb-3">
@@ -272,22 +281,32 @@
                         <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
                         <div class="form-text mt-2">
                             <strong>Required columns:</strong><br>
-                            <code>professor_user_id, course_title, course_code, course_section_id, time_in, time_out, days, grace_period, student_count, remote_device, room_assignment</code>
+                            <code>course_code, student_id, attendance_date, attendance_time_in, attendance_time_out, attendance_status</code>
                         </div>
                     </div>
-                    <div class="alert alert-info">
-                        <strong>📋 Sample:</strong>
-                        <pre class="mb-0 mt-2">00004,Web Dev,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
+                    
+                    <div class="alert alert-success">
+                        <strong>📋 Sample CSV Format:</strong>
+                        <pre class="mb-0 mt-2">course_code,student_id,attendance_date,attendance_time_in,attendance_time_out,attendance_status
+CSIT201,2021-12345,2025-11-11,08:00,10:00,Present
+CSIT201,2021-12346,17/10/2025,08:05,10:00,Late
+MATH101,2021-12345,2025-10-17,10:30,12:00,Present</pre>
+                        <small class="mt-2 d-block"><strong>Supported date formats:</strong> YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY</small>
                     </div>
+                    
                     <button type="submit" class="btn btn-success w-100">
                         <i class="bi bi-upload"></i> Upload CSV
                     </button>
                 </form>
+                
                 <div id="uploadResults" class="mt-3" style="display: none;">
                     <div class="alert">
                         <h6 class="fw-bold">Results:</h6>
-                        <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount">0</span></p>
+                        <p class="mb-1"><strong>✅ Created:</strong> <span id="createdCount">0</span></p>
+                        <p class="mb-1"><strong>🔄 Updated:</strong> <span id="updatedCount">0</span></p>
                         <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount">0</span></p>
+                        <p class="mb-1"><strong>👤 Students not found:</strong> <span id="studentNotFoundCount">0</span></p>
+                        <p class="mb-1"><strong>📚 Courses not found:</strong> <span id="courseNotFoundCount">0</span></p>
                         <div id="errorsList"></div>
                     </div>
                 </div>
@@ -295,6 +314,7 @@
         </div>
     </div>
 </div>
+
 
 <script>
 /* --- JS UNCHANGED --- */
