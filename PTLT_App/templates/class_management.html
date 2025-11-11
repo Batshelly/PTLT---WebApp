@@ -9,192 +9,91 @@
         "{% static 'image/Admin-ClassManage-2.PNG' %}",
         "{% static 'image/Admin-ClassManage-3.PNG' %}",
         "{% static 'image/Admin-ClassManage-4.PNG' %}",
-        "{% static 'image/Admin-ClassManage-5.PNG' %}",
+        "{% static 'image/Admin-ClassManage-5.PNG' %}"
     ]
 }
 </script>
 {% endblock %}
 
 {% block content %}
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Class Management</title>
-    
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    
-    {% load static %}
-    <link rel="stylesheet" href="{% static 'css/class_management.css' %}">
-    
-    <style>
-        /* Responsive improvements */
-        @media (max-width: 768px) {
-            .container {
-                padding-left: 10px !important;
-                padding-right: 10px !important;
-            }
-            
-            .btn-group-mobile {
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .btn-group-mobile .btn {
-                width: 100%;
-                margin: 0 !important;
-            }
-            
-            .table-responsive {
-                font-size: 0.85rem;
-            }
-            
-            .table th, .table td {
-                padding: 0.5rem 0.25rem;
-                white-space: nowrap;
-            }
-            
-            h3 {
-                font-size: 1.25rem;
-            }
-            
-            .alert {
-                font-size: 0.9rem;
-            }
+<link rel="stylesheet" href="{% static 'css/class_management.css' %}">
+
+<style>
+    /* Responsive improvements */
+    @media (max-width: 768px) {
+        .container {
+            padding-left: 10px !important;
+            padding-right: 10px !important;
         }
         
-        @media (max-width: 576px) {
-            .col-form-buttons {
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .col-form-buttons .btn {
-                width: 100%;
-            }
+        .btn-group-mobile {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
-    </style>
-</head>
-<body>
-
+        
+        .btn-group-mobile .btn {
+            width: 100%;
+            margin: 0 !important;
+        }
+        
+        .table-responsive {
+            font-size: 0.85rem;
+        }
+        
+        .table th, .table td {
+            padding: 0.5rem 0.25rem;
+            white-space: nowrap;
+        }
+        
+        h3 {
+            font-size: 1.25rem;
+        }
+        
+        .alert {
+            font-size: 0.9rem;
+        }
+    }
     
+    @media (max-width: 576px) {
+        .col-form-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .col-form-buttons .btn {
+            width: 100%;
+        }
+    }
+</style>
+
 <div class="container py-4 px-md-3 px-2">
-    <!-- Set Semester Function-->
-    <!-- 
-    <div class="bg-white shadow rounded-4 p-md-4 p-3">
-        <h3 class="mb-0 text-decoration-underline">Set Semester</h3>
-        <h3 class="mt-3 mb-4">Semester Period</h3> 
-
-        
-        {% if new_accounts_count > 0 %}
-        <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
-            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-                <div>
-                    <strong>New Account Uploads!</strong> 
-                    {{ new_accounts_count }} new account{{ new_accounts_count|pluralize }} uploaded from mobile app.
-                    <br><small class="text-muted">⚠️ Don't forget to sync the accounts to mobile app after reviewing.</small>
-                    <button type="button" class="btn btn-sm btn-outline-primary mt-2" data-bs-toggle="collapse" data-bs-target="#recentUploads">
-                        View Details
-                    </button>
-                </div>
-                <a href="?mark_read=true" class="btn btn-sm btn-success">Mark as Read</a>
-            </div>
-        </div> 
-
-        <div class="collapse" id="recentUploads">
-            <div class="card card-body mb-3">
-                <h6>Recent Account Uploads:</h6>
-                <ul class="mb-0">
-                    {% for upload in recent_uploads %}
-                    <li>{{ upload.account_name }} - {{ upload.uploaded_at|timesince }} ago</li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if messages %}
-            {% for message in messages %}
-                {% if "semester" in message.tags %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endif %}
-            {% endfor %}
-        {% endif %}
-
-        {% if current_semester %}
-            <div id="semester-display">
-                <p><strong>Start Date:</strong> {{ current_semester.start_date }}</p>
-                <p><strong>End Date:</strong> {{ current_semester.end_date }}</p>
-                <button type="button" id="edit-btn" class="btn btn-warning">Edit Semester</button>
-            </div>
-
-            <form id="semester-form" method="POST" action="{% url 'set_semester' %}" style="display:none;">
-                {% csrf_token %}
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">Start Date:</label>
-                        <input type="date" class="form-control" name="semester_start"
-                            value="{{ current_semester.start_date|date:'Y-m-d' }}">
-                    </div>
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">End Date:</label>
-                        <input type="date" class="form-control" name="semester_end"
-                            value="{{ current_semester.end_date|date:'Y-m-d' }}">
-                    </div>
-                </div>
-                <div class="col-form-buttons">
-                    <button type="submit" class="btn btn-success">Save Semester</button>
-                    <button type="button" id="cancel-btn" class="btn btn-secondary">Cancel</button>
-                </div>
-            </form>
-        {% else %}
-            <form method="POST" action="{% url 'set_semester' %}">
-                {% csrf_token %}
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">Start Date:</label>
-                        <input type="date" class="form-control" name="semester_start">
-                    </div>
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">End Date:</label>
-                        <input type="date" class="form-control" name="semester_end">
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-success">Save Semester</button>
-            </form>
-        {% endif %}
-    </div>
+    <!-- Set Semester Function (commented out) -->
+    <!-- ... your commented section ... -->
 </div>
- -->
-
-
-
 
 <div class="container py-3 bg-white shadow rounded-4 p-md-4 p-3">
     <h3 class="mb-0 text-decoration-underline">Class Management</h3>
     <h1></h1>
+    
     <!-- Button Group with responsive layout -->
-        <div class="btn-group-mobile d-md-flex d-block mb-3">
-            <button id="importClassBtn" class="btn btn-primary custom-btn">
-                <i class="bi bi-upload"></i> Import Class
-            </button>
-            <input type="file" id="fileInput" accept=".csv" style="display:none">
-            
-            <button id="importClassPdfBtn" class="btn btn-info ms-md-2">
-                <i class="bi bi-file-pdf"></i> Import from PDF
-            </button>
-            <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+    <div class="btn-group-mobile d-md-flex d-block mb-3">
+        <button id="importClassBtn" class="btn btn-primary custom-btn">
+            <i class="bi bi-upload"></i> Import Class
+        </button>
+        <input type="file" id="fileInput" accept=".csv" style="display:none">
+        
+        <button id="importClassPdfBtn" class="btn btn-info ms-md-2">
+            <i class="bi bi-file-pdf"></i> Import from PDF
+        </button>
+        <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
 
-            <button id="syncToMobileBtn" class="btn btn-success ms-md-2 custom-btn">
-                <i class="bi bi-arrow-repeat"></i> Sync to Mobile App
-            </button>
-        </div>
+        <button id="syncToMobileBtn" class="btn btn-success ms-md-2 custom-btn">
+            <i class="bi bi-arrow-repeat"></i> Sync to Mobile App
+        </button>
+    </div>
+    
     <h3 class="mt-3 mb-4">Create Subject</h3>
     
     <form id="createSubjectForm" method="POST">
@@ -465,5 +364,5 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 });
 </script>
-</body>
+
 {% endblock %}

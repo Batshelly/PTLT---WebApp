@@ -1123,10 +1123,23 @@ def import_class_schedule(request):
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 3: PARSE ATTENDANCE DATE & TIMES
+                # ✨ STEP 3: PARSE ATTENDANCE DATE & TIMES (FLEXIBLE DATE FORMATS)
                 try:
                     from datetime import datetime
-                    attendance_date = datetime.strptime(attendance_date_str, '%Y-%m-%d').date()
+                    
+                    # Try multiple date formats: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY
+                    attendance_date = None
+                    for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']:
+                        try:
+                            attendance_date = datetime.strptime(attendance_date_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if not attendance_date:
+                        raise ValueError(f"Date '{attendance_date_str}' doesn't match any supported format (YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)")
+                    
+                    # Parse times
                     attendance_time_in = datetime.strptime(attendance_time_in_str, '%H:%M').time()
                     
                     attendance_time_out = None
@@ -1194,6 +1207,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {str(e)}']
         }, status=500)
+
 
 
 
