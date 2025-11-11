@@ -1,6 +1,18 @@
 {% extends "admin_navbar.html" %}
 {% load static %}
 
+{% block help_images_script %}
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/Admin-AccManage-1.PNG' %}",
+        "{% static 'image/Admin-AccManage-2.PNG' %}",
+        "{% static 'image/Admin-AccManage-3.PNG' %}"
+    ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <head>
     <meta charset="UTF-8">
