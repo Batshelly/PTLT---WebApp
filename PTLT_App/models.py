@@ -135,12 +135,21 @@ class AttendanceRecord(models.Model):
         return f"{self.date} - {self.student.user_id} - {self.status}"
     
 class Semester(models.Model):
+    semester_name = models.CharField(max_length=50, default='First Semester')  # NEW
+    school_year = models.CharField(max_length=20, default='2025-2026')  # NEW
     start_date = models.DateField()
     end_date = models.DateField()
+    is_active = models.BooleanField(default=True)  # NEW
     is_archived = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)  # NEW
+
+    @property
+    def has_ended(self):  # NEW
+        from django.utils import timezone
+        return timezone.now().date() > self.end_date
 
     def __str__(self):
-        return f"{self.start_date} - {self.end_date}"
+        return f"{self.semester_name} ({self.school_year})"
 
 class AccountUploadNotification(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)

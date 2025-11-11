@@ -1490,25 +1490,21 @@ def import_class_from_pdf(request):
 @admin_required
 def class_management(request):
     
-    today = timezone.now().date()
-    
-    current_semester = Semester.objects.filter(
-        start_date__lte=today,
-        end_date__gte=today
-    ).first()
-    active_semester = current_semester
+    # UPDATED: Get current active semester using is_active flag instead of date range
+    current_semester = Semester.objects.filter(is_active=True).first()
     
     # Get unread notifications count
     new_accounts_count = AccountUploadNotification.objects.filter(is_read=False).count()
     recent_uploads = AccountUploadNotification.objects.filter(is_read=False)[:5]  # Last 5
     
-    #update student count
+    # Update student count
     schedules = ClassSchedule.objects.all()
     for schedule in schedules:
         student_acc = Account.objects.filter(course_section_id=schedule.course_section_id)
         student_count = len(student_acc)
         schedule.student_count = int(student_count)
         schedule.save()
+    
     # Mark as read if user clicks "Mark as Read"
     if request.GET.get('mark_read') == 'true':
         AccountUploadNotification.objects.filter(is_read=False).update(is_read=True)
@@ -1516,6 +1512,7 @@ def class_management(request):
         return redirect('class_management')
     
     course_sections = CourseSection.objects.all()
+    
     if request.method == 'POST':
         course_code = request.POST.get('course_code')
         course_name = request.POST.get('course_name')
@@ -1524,10 +1521,12 @@ def class_management(request):
         day = request.POST.get('day')
         course_section_str = request.POST.get('course_section')
         remote_device = request.POST.get('remote_device')
+        
         try:
             section_obj = CourseSection.objects.get(course_section=course_section_str)
         except CourseSection.DoesNotExist:
             section_obj = None
+        
         ClassSchedule.objects.create(
             course_code=course_code,
             course_title=course_name,
@@ -1559,15 +1558,16 @@ def class_management(request):
     instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
     
+    # UPDATED: Removed active_semester from context (not needed anymore)
     return render(request, 'class_management.html', {
-        "active_semester": active_semester,
         'course_sections': course_sections,
         'classes': classes,
         'instructors_json': instructors_json,
         'new_accounts_count': new_accounts_count,
         'recent_uploads': recent_uploads,
-        'current_semester': current_semester
+        'current_semester': current_semester,  # Only this is needed
     })
+
 
 @require_http_methods(["POST"])
 @admin_required
@@ -1864,54 +1864,109 @@ def attendance_report_template(request):
     return render(request, "attendance_report_template.html", context)
     
 
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
+from datetime import datetime, date
+from django.utils import timezone
+
 @admin_required
+@require_POST
 def set_semester(request):
-    today = date.today()
-    current_semester = Semester.objects.filter(start_date__lte=today, end_date__gte=today).first()
-
-    if request.method == "POST":
-        start = request.POST.get("semester_start")
-        end = request.POST.get("semester_end")
-
-        if not start or not end:
-            messages.error(request, "Both start and end dates are required.", extra_tags="semester")
-            return redirect("class_management")
-
+    """Set a new semester - can only be done once until end date passes"""
+    try:
+        semester_name = request.POST.get('semester_name')
+        school_year = request.POST.get('school_year')
+        start_date_str = request.POST.get('start_date')
+        end_date_str = request.POST.get('end_date')
+        
+        # Validation - Check all required fields
+        if not all([semester_name, school_year, start_date_str, end_date_str]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'All fields are required'
+            }, status=400)
+        
+        # Parse dates
         try:
-            start_date = datetime.strptime(start, "%Y-%m-%d").date()
-            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         except ValueError:
-            messages.error(request, "Invalid date format.", extra_tags="semester")
-            return redirect("class_management")
-
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid date format. Use YYYY-MM-DD'
+            }, status=400)
+        
+        # Validate end date is after start date
         if end_date <= start_date:
-            messages.error(request, "End date must be after start date.", extra_tags="semester")
-            return redirect("class_management")
-
+            return JsonResponse({
+                'status': 'error',
+                'message': 'End date must be after start date'
+            }, status=400)
+        
+        # Get current active semester
+        today = date.today()
+        current_semester = Semester.objects.filter(is_active=True).first()
+        
+        # Check if there's an active semester that hasn't ended yet
+        if current_semester:
+            if current_semester.end_date >= today:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'Cannot set new semester. Current semester "{current_semester.semester_name} ({current_semester.school_year})" is still active until {current_semester.end_date.strftime("%B %d, %Y")}. You can only set a new semester after this date.'
+                }, status=400)
+        
+        # Validate start date is not in the past (optional - remove if you want to allow past dates)
         if start_date < today:
-            messages.error(request, "Semester start date cannot be earlier than today.", extra_tags="semester")
-            return redirect("class_management")
-
-        # If a semester exists and is ongoing → block unless editing
-        if current_semester and "confirm_edit" not in request.POST:
-            messages.error(request, "A semester is already active. Confirm edit to change it.", extra_tags="semester")
-            return redirect("class_management")
-
-        # If editing, update existing; else create new
-        if current_semester and "confirm_edit" in request.POST:
-            current_semester.start_date = start_date
-            current_semester.end_date = end_date
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Semester start date cannot be earlier than today'
+            }, status=400)
+        
+        # Check for duplicate semester
+        if Semester.objects.filter(
+            semester_name=semester_name,
+            school_year=school_year
+        ).exists():
+            return JsonResponse({
+                'status': 'error',
+                'message': f'{semester_name} for school year {school_year} already exists'
+            }, status=400)
+        
+        # Archive previous semester if it exists and has ended
+        if current_semester:
+            current_semester.is_active = False
+            current_semester.is_archived = True
             current_semester.save()
-            messages.success(request, "Semester period updated successfully.", extra_tags="semester")
-        else:
-            Semester.objects.all().delete()  # make sure only one exists
-            current_semester = Semester.objects.create(start_date=start_date, end_date=end_date)
-            messages.success(request, "Semester period saved successfully.", extra_tags="semester")
+        
+        # Create new semester
+        new_semester = Semester.objects.create(
+            semester_name=semester_name,
+            school_year=school_year,
+            start_date=start_date,
+            end_date=end_date,
+            is_active=True,
+            is_archived=False
+        )
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Semester set successfully',
+            'semester': {
+                'id': new_semester.id,
+                'semester_name': new_semester.semester_name,
+                'school_year': new_semester.school_year,
+                'start_date': new_semester.start_date.strftime('%B %d, %Y'),
+                'end_date': new_semester.end_date.strftime('%B %d, %Y')
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Server error: {str(e)}'
+        }, status=500)
 
-        return redirect("class_management")
-
-    # this stays at the bottom so the page renders when not POST
-    return render(request, "class_management.html", {"current_semester": current_semester,"today": today })
 
 # API views for mobile app integration
 class AccountViewSet(viewsets.ModelViewSet):

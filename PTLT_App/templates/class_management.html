@@ -1,6 +1,7 @@
 {% extends "admin_navbar.html" %}
 {% load static %}
 
+
 {% block help_images_script %}
 <script id="help-data" type="application/json">
 {
@@ -15,8 +16,10 @@
 </script>
 {% endblock %}
 
+
 {% block content %}
 <link rel="stylesheet" href="{% static 'css/class_management.css' %}">
+
 
 <style>
     /* Responsive improvements */
@@ -68,10 +71,10 @@
     }
 </style>
 
+
 <div class="container py-4 px-md-3 px-2">
     <div class="bg-white shadow rounded-4 p-md-4 p-3">
-        <h3 class="mb-0 text-decoration-underline">Set Semester</h3>
-        <h3 class="mt-3 mb-4">Semester Period</h3>
+        <h3 class="mb-4 text-decoration-underline">Set Semester</h3>
 
         <!-- Notification Alert -->
         {% if new_accounts_count > 0 %}
@@ -101,59 +104,41 @@
         </div>
         {% endif %}
 
-        {% if messages %}
-            {% for message in messages %}
-                {% if "semester" in message.tags %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endif %}
-            {% endfor %}
-        {% endif %}
-
-        {% if current_semester %}
-            <div id="semester-display">
-                <p><strong>Start Date:</strong> {{ current_semester.start_date }}</p>
-                <p><strong>End Date:</strong> {{ current_semester.end_date }}</p>
-                <button type="button" id="edit-btn" class="btn btn-warning">Edit Semester</button>
+        <!-- Set Semester Section -->
+        <div class="alert {% if current_semester %}alert-info{% else %}alert-warning{% endif %} mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+                <div>
+                    <h5 class="mb-2"><i class="bi bi-calendar-range"></i> Academic Semester</h5>
+                    {% if current_semester %}
+                        <p class="mb-1">
+                            <strong>{{ current_semester.semester_name }}</strong> 
+                            <span class="badge bg-primary ms-2">{{ current_semester.school_year }}</span>
+                        </p>
+                        <p class="mb-0">
+                            <small class="text-muted">
+                                <i class="bi bi-calendar-event"></i> 
+                                {{ current_semester.start_date|date:"M d, Y" }} - {{ current_semester.end_date|date:"M d, Y" }}
+                            </small>
+                        </p>
+                    {% else %}
+                        <p class="mb-0"><strong>⚠️ No active semester set</strong></p>
+                        <small class="text-muted">Please set a semester to begin tracking attendance</small>
+                    {% endif %}
+                </div>
+                <div>
+                    {% if not current_semester or current_semester.has_ended %}
+                        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#setSemesterModal">
+                            <i class="bi bi-calendar-plus"></i> 
+                            {% if current_semester %}Set New Semester{% else %}Set Semester{% endif %}
+                        </button>
+                    {% else %}
+                        <button class="btn btn-secondary" disabled title="Current semester is still active until {{ current_semester.end_date|date:'M d, Y' }}">
+                            <i class="bi bi-lock-fill"></i> Semester Active
+                        </button>
+                    {% endif %}
+                </div>
             </div>
-
-            <form id="semester-form" method="POST" action="{% url 'set_semester' %}" style="display:none;">
-                {% csrf_token %}
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">Start Date:</label>
-                        <input type="date" class="form-control" name="semester_start"
-                            value="{{ current_semester.start_date|date:'Y-m-d' }}">
-                    </div>
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">End Date:</label>
-                        <input type="date" class="form-control" name="semester_end"
-                            value="{{ current_semester.end_date|date:'Y-m-d' }}">
-                    </div>
-                </div>
-                <div class="col-form-buttons">
-                    <button type="submit" class="btn btn-success">Save Semester</button>
-                    <button type="button" id="cancel-btn" class="btn btn-secondary">Cancel</button>
-                </div>
-            </form>
-        {% else %}
-            <form method="POST" action="{% url 'set_semester' %}">
-                {% csrf_token %}
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">Start Date:</label>
-                        <input type="date" class="form-control" name="semester_start">
-                    </div>
-                    <div class="col-md-6 col-12">
-                        <label class="form-label">End Date:</label>
-                        <input type="date" class="form-control" name="semester_end">
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-success">Save Semester</button>
-            </form>
-        {% endif %}
+        </div>
     </div>
 </div>
 
@@ -392,61 +377,219 @@
     </div>
 </div>
 
+<!-- Set Semester Modal -->
+<div class="modal fade" id="setSemesterModal" tabindex="-1" aria-labelledby="setSemesterLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="setSemesterLabel">
+                    <i class="bi bi-exclamation-triangle-fill"></i> Set New Semester
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <h6 class="fw-bold"><i class="bi bi-exclamation-circle"></i> CRITICAL WARNING</h6>
+                    <ul class="mb-2">
+                        <li>Setting a new semester is <strong>PERMANENT</strong></li>
+                        <li>This action <strong>CANNOT BE CHANGED</strong> until the end date</li>
+                        <li>All attendance records will be tied to this semester</li>
+                        <li>You can only set a new semester after the current one ends</li>
+                    </ul>
+                    <p class="mb-0 fw-bold">Type "I UNDERSTAND" to confirm you agree to these terms.</p>
+                </div>
+
+                <form id="setSemesterForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="semesterName" class="form-label fw-bold">Semester Name <span class="text-danger">*</span></label>
+                        <select class="form-select" id="semesterName" name="semester_name" required>
+                            <option value="">-- Select Semester --</option>
+                            <option value="First Semester">First Semester</option>
+                            <option value="Second Semester">Second Semester</option>
+                            <option value="Summer">Summer</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="schoolYear" class="form-label fw-bold">School Year <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="schoolYear" name="school_year" 
+                               placeholder="e.g., 2024-2025" pattern="\d{4}-\d{4}" required>
+                        <small class="text-muted">Format: YYYY-YYYY (e.g., 2024-2025)</small>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="startDate" class="form-label fw-bold">Start Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="startDate" name="start_date" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="endDate" class="form-label fw-bold">End Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="endDate" name="end_date" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="confirmationText" class="form-label fw-bold">
+                            Type "I UNDERSTAND" to confirm <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="confirmationText" 
+                               placeholder="Type exactly: I UNDERSTAND" 
+                               autocomplete="off" required>
+                        <small class="text-muted">This field is case-sensitive</small>
+                    </div>
+
+                    <div id="formError" class="alert alert-danger" style="display: none;"></div>
+
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning" id="submitSemesterBtn" disabled>
+                            <i class="bi bi-check-circle"></i> Confirm & Set Semester
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-    // Semester edit functionality
-    const editBtn = document.getElementById('edit-btn');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const semesterDisplay = document.getElementById('semester-display');
-    const semesterForm = document.getElementById('semester-form');
-    
-    if (editBtn) {
-        editBtn.addEventListener('click', () => {
-            semesterDisplay.style.display = 'none';
-            semesterForm.style.display = 'block';
-        });
-    }
-    
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => {
-            semesterDisplay.style.display = 'block';
-            semesterForm.style.display = 'none';
-        });
-    }
-
-    // Modal management
+    // Modal management for Add Section
     const addSectionModalEl = document.getElementById('addSectionModal');
-    if (!addSectionModalEl) return;
+    if (addSectionModalEl) {
+        let addSectionModalInstance = null;
 
-    let addSectionModalInstance = null;
+        function getAddSectionModalInstance() {
+            if (!addSectionModalInstance) {
+                addSectionModalInstance = new bootstrap.Modal(addSectionModalEl, {
+                    keyboard: true,
+                    backdrop: true
+                });
+            }
+            return addSectionModalInstance;
+        }
 
-    function getAddSectionModalInstance() {
-        if (!addSectionModalInstance) {
-            addSectionModalInstance = new bootstrap.Modal(addSectionModalEl, {
-                keyboard: true,
-                backdrop: true
+        function cleanupModalBackdrops() {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }
+
+        addSectionModalEl.addEventListener('hidden.bs.modal', function () {
+            cleanupModalBackdrops();
+            const form = addSectionModalEl.querySelector('form');
+            if (form) form.reset();
+        });
+
+        addSectionModalEl.addEventListener('hide.bs.modal', function () {
+            setTimeout(cleanupModalBackdrops, 100);
+        });
+    }
+
+    // Set Semester Modal Logic
+    const confirmationInput = document.getElementById('confirmationText');
+    const submitBtn = document.getElementById('submitSemesterBtn');
+    const setSemesterForm = document.getElementById('setSemesterForm');
+    const formError = document.getElementById('formError');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+
+    if (confirmationInput && submitBtn && setSemesterForm) {
+        // Enable/disable submit button based on confirmation text
+        confirmationInput.addEventListener('input', function() {
+            if (this.value === 'I UNDERSTAND') {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('btn-secondary');
+                submitBtn.classList.add('btn-warning');
+            } else {
+                submitBtn.disabled = true;
+                submitBtn.classList.remove('btn-warning');
+                submitBtn.classList.add('btn-secondary');
+            }
+        });
+
+        // Validate end date is after start date
+        function validateDates() {
+            const startDate = new Date(startDateInput.value);
+            const endDate = new Date(endDateInput.value);
+
+            if (startDate && endDate && endDate <= startDate) {
+                endDateInput.setCustomValidity('End date must be after start date');
+                formError.textContent = 'End date must be after start date';
+                formError.style.display = 'block';
+            } else {
+                endDateInput.setCustomValidity('');
+                formError.style.display = 'none';
+            }
+        }
+
+        startDateInput.addEventListener('change', validateDates);
+        endDateInput.addEventListener('change', validateDates);
+
+        // Handle form submission
+        setSemesterForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Final validation
+            if (confirmationInput.value !== 'I UNDERSTAND') {
+                formError.textContent = 'You must type "I UNDERSTAND" exactly to proceed';
+                formError.style.display = 'block';
+                return;
+            }
+
+            // Disable button to prevent double submission
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Setting Semester...';
+
+            const formData = new FormData(setSemesterForm);
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            fetch('/set_semester/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('✅ Semester set successfully!\n\n' + 
+                          'Semester: ' + data.semester.semester_name + '\n' +
+                          'School Year: ' + data.semester.school_year + '\n' +
+                          'Period: ' + data.semester.start_date + ' to ' + data.semester.end_date);
+                    location.reload();
+                } else {
+                    formError.textContent = data.message || 'Failed to set semester';
+                    formError.style.display = 'block';
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Confirm & Set Semester';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                formError.textContent = 'Network error. Please try again.';
+                formError.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Confirm & Set Semester';
+            });
+        });
+
+        // Reset form when modal is closed
+        const setSemesterModal = document.getElementById('setSemesterModal');
+        if (setSemesterModal) {
+            setSemesterModal.addEventListener('hidden.bs.modal', function() {
+                setSemesterForm.reset();
+                confirmationInput.value = '';
+                submitBtn.disabled = true;
+                formError.style.display = 'none';
             });
         }
-        return addSectionModalInstance;
     }
-
-    function cleanupModalBackdrops() {
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        backdrops.forEach(backdrop => backdrop.remove());
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
-    }
-
-    addSectionModalEl.addEventListener('hidden.bs.modal', function () {
-        cleanupModalBackdrops();
-        const form = addSectionModalEl.querySelector('form');
-        if (form) form.reset();
-    });
-
-    addSectionModalEl.addEventListener('hide.bs.modal', function () {
-        setTimeout(cleanupModalBackdrops, 100);
-    });
 });
 </script>
 

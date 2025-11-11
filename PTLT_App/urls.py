@@ -31,4 +31,5 @@ urlpatterns = [
     path('attendance/docx/<int:schedule_id>/', views.generate_attendance_docx, name='generate_attendance_docx'),
     path('clear_attendance/', views.clear_attendance, name='clear_attendance'), #TEMPORARY!
     path('clear_students/', views.clear_students, name='clear_students'),  #TEMPORARY!
+    path('set_semester/', views.set_semester, name='set_semester'),
 ]
