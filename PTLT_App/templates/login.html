@@ -33,7 +33,7 @@
                 {% endfor %}
             {% endif %}
 
-            <form method="POST">
+            <form method="POST" id="loginForm">
                 {% csrf_token %}
                 
                 <div class="mb-3">
@@ -51,8 +51,14 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-login w-100 mt-3">
-                    <i class="bi bi-send"></i> Send OTP
+                <button type="submit" class="btn btn-login w-100 mt-3" id="sendOtpBtn">
+                    <span id="btnText">
+                        <i class="bi bi-send"></i> Send OTP
+                    </span>
+                    <span id="btnLoading" class="d-none">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Sending OTP...
+                    </span>
                 </button>
             </form>
 
@@ -61,6 +67,7 @@
                     <i class="bi bi-shield-check"></i> Passwordless authentication for Instructors and Admins
                 </small>
             </div>
+
         </div>
     </div>
 </div>
