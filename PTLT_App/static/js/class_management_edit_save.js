@@ -112,12 +112,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 const currentDay = dayCell.textContent.trim();
                 const currentDevice = remoteDeviceCell.textContent.trim();
 
-                let dropdownHTML = `<select class="form-select form-select-sm">`;
-
-                dropdownHTML += professors.map(p => {
-                    const selected = (p === currentProf) ? 'selected' : '';
-                    return `<option value="${p}" ${selected}>${p}</option>`;
-                }).join('');
+                let dropdownHTML = `<select class="form-select form-select-sm" data-professor-select>`;
+                dropdownHTML += `<option value="">-- Select Professor --</option>`;
+                dropdownHTML += professors.map(prof => {
+                    const fullName = `${prof.first_name} ${prof.last_name}`.trim();
+                    const selected = fullName === currentProf ? "selected" : "";
+                    return `<option value="${prof.id}" ${selected}>${fullName}</option>`;
+                }).join("");
 
                 if (!professors.includes(currentProf) && currentProf !== "-") {
                     dropdownHTML = `<select class="form-select form-select-sm">
@@ -146,7 +147,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 button.classList.replace("btn-outline-primary", "btn-outline-success");
             } else {
                 // SAVE MODE
-                const selectedProf = profCell.querySelector('select').value;
+                const selectElement = profCell.querySelector("select");
+                const selectedProfId = selectElement.value; // This is now the ID, not the name
+                const selectedProfName = selectElement.options[selectElement.selectedIndex].text;
+
                 const selectedTimeIn = timeInCell.querySelector('input').value;
                 const selectedTimeOut = timeOutCell.querySelector('input').value;
                 const selectedDay = dayCell.querySelector('select').value;
@@ -169,7 +173,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         "X-CSRFToken": getCSRFToken()
                     },
                     body: JSON.stringify({
-                        professor_name: selectedProf,
+                        professor_id: selectedProfId,
                         time_in: selectedTimeIn,
                         time_out: selectedTimeOut,
                         day: selectedDay,
@@ -178,7 +182,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
 
                 if (response.ok) {
-                    profCell.textContent = selectedProf;
+                    profCell.textContent = selectedProfName;
                     timeInCell.textContent = selectedTimeIn;
                     timeOutCell.textContent = selectedTimeOut;
                     dayCell.textContent = selectedDay;

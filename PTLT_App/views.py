@@ -1555,8 +1555,9 @@ def class_management(request):
         classes = paginator.page(paginator.num_pages)
     
     # Get instructors only
-    instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
+    instructors = Account.objects.filter(role="Instructor").values("id", "first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
+
     
     # UPDATED: Removed active_semester from context (not needed anymore)
     return render(request, 'class_management.html', {
@@ -1631,7 +1632,6 @@ def add_course_section(request):
             'status': 'error',
             'message': str(e)
         }, status=500)
-
 @csrf_exempt
 @admin_required
 def update_class_schedule(request, pk):
@@ -1640,25 +1640,32 @@ def update_class_schedule(request, pk):
             cls = ClassSchedule.objects.get(id=pk)
             data = json.loads(request.body)
 
-            prof_name = data.get("professor_name", "").strip()
-            if prof_name:
+            # Get professor by ID instead of parsing name
+            prof_id = data.get("professor_id", "").strip()
+            
+            if prof_id:
                 try:
-                    first, last = prof_name.split(" ", 1)
-                    professor = Account.objects.get(first_name=first, last_name=last)
+                    professor = Account.objects.get(id=prof_id, role="Instructor")
                     cls.professor = professor
                 except Account.DoesNotExist:
                     cls.professor = None
+            else:
+                cls.professor = None
 
             cls.time_in = data.get("time_in")
             cls.time_out = data.get("time_out")
             cls.days = data.get("day")
-            cls.remote_device = data.get("remote_device") 
+            cls.remote_device = data.get("remote_device")
             cls.save()
-            
 
             return JsonResponse({"status": "success"})
+        except ClassSchedule.DoesNotExist:
+            return JsonResponse({"status": "error", "message": "Class schedule not found"}, status=404)
         except Exception as e:
-            return JsonResponse({"status": "error", "message": str(e)})
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    
+    return JsonResponse({"status": "error", "message": "Invalid request method"}, status=400)
+
 
 @csrf_exempt
 @admin_required
