@@ -1,4 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
+    console.log("🔵 DOM Loaded - Initializing class management");
+    
     // ===== SEMESTER EDIT FUNCTIONALITY =====
     const editBtn = document.getElementById("edit-btn");
     const semesterForm = document.getElementById("semester-form");
@@ -23,8 +25,17 @@ document.addEventListener("DOMContentLoaded", function () {
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
     // Load instructors passed from Django template
-    const instructorsData = JSON.parse(document.getElementById("instructor-list").textContent);
-    const professors = instructorsData.map(i => `${i.first_name.trim()} ${i.last_name.trim()}`);
+    const instructorListElement = document.getElementById("instructor-list");
+    console.log("📋 Instructor list element:", instructorListElement);
+    
+    if (!instructorListElement) {
+        console.error("❌ instructor-list element not found in DOM!");
+        return;
+    }
+    
+    const instructorsData = JSON.parse(instructorListElement.textContent);
+    console.log("✅ Parsed instructors data:", instructorsData);
+    console.log("📊 Number of instructors:", instructorsData.length);
 
     // Helper to get CSRF token
     function getCSRFToken() {
@@ -73,7 +84,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     message += 'Mobile apps will:\n';
                     message += '• Replace ALL mobile accounts with server data\n';
                     message += '• Update class schedules\n\n';
-                    message += '• Update course sections\n\n';  // ← ADD THIS LINE
+                    message += '• Update course sections\n\n';
                     message += 'Open mobile app and press "Sync Now" to download!';
                     
                     alert(message);
@@ -89,7 +100,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
     }
-// Toggle Edit/Save Button for class schedule table
+
+    // Toggle Edit/Save Button for class schedule table
     document.querySelectorAll('.toggle-edit-btn').forEach(button => {
         button.addEventListener('click', async function (e) {
             e.preventDefault();
@@ -97,6 +109,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = button.closest('tr');
             const rowId = row.dataset.id;
             const isEditing = button.textContent.trim() === "Save";
+            
+            console.log(`🔵 Button clicked for row ${rowId}, isEditing: ${isEditing}`);
 
             const profCell = row.querySelector('.professor');
             const timeInCell = row.querySelector('.timein');
@@ -106,24 +120,27 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (!isEditing) {
                 // EDIT MODE
+                console.log("📝 Entering EDIT mode");
+                
                 const currentProf = profCell.textContent.trim();
                 const currentTimeIn = timeInCell.textContent.trim();
                 const currentTimeOut = timeOutCell.textContent.trim();
                 const currentDay = dayCell.textContent.trim();
                 const currentDevice = remoteDeviceCell.textContent.trim();
+                
+                console.log("📋 Current values:", { currentProf, currentTimeIn, currentTimeOut, currentDay, currentDevice });
 
+                // Build professor dropdown (FIXED VERSION)
                 let dropdownHTML = `<select class="form-select form-select-sm" data-professor-select>`;
                 dropdownHTML += `<option value="">-- Select Professor --</option>`;
-                dropdownHTML += professors.map(prof => {
+                
+                // Use instructorsData (array of objects with id, first_name, last_name)
+                instructorsData.forEach(prof => {
                     const fullName = `${prof.first_name} ${prof.last_name}`.trim();
                     const selected = fullName === currentProf ? "selected" : "";
-                    return `<option value="${prof.id}" ${selected}>${fullName}</option>`;
-                }).join("");
-
-                if (!professors.includes(currentProf) && currentProf !== "-") {
-                    dropdownHTML = `<select class="form-select form-select-sm">
-                        <option value="${currentProf}" selected>${currentProf}</option>` + dropdownHTML.replace('<select class="form-select form-select-sm">', '');
-                }
+                    dropdownHTML += `<option value="${prof.id}" ${selected}>${fullName}</option>`;
+                    console.log(`  🔹 Added professor: ${fullName} (ID: ${prof.id})`);
+                });
 
                 dropdownHTML += `</select>`;
                 profCell.innerHTML = dropdownHTML;
@@ -145,10 +162,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 button.textContent = "Save";
                 button.classList.replace("btn-outline-primary", "btn-outline-success");
+                console.log("✅ Edit mode activated");
             } else {
                 // SAVE MODE
+                console.log("💾 Entering SAVE mode");
+                
                 const selectElement = profCell.querySelector("select");
-                const selectedProfId = selectElement.value; // This is now the ID, not the name
+                const selectedProfId = selectElement.value;
                 const selectedProfName = selectElement.options[selectElement.selectedIndex].text;
 
                 const selectedTimeIn = timeInCell.querySelector('input').value;
@@ -156,51 +176,80 @@ document.addEventListener("DOMContentLoaded", function () {
                 const selectedDay = dayCell.querySelector('select').value;
                 const selectedDevice = remoteDeviceCell.querySelector('select').value;
 
+                console.log("📋 Selected values:", {
+                    selectedProfId,
+                    selectedProfName,
+                    selectedTimeIn,
+                    selectedTimeOut,
+                    selectedDay,
+                    selectedDevice
+                });
+
                 if (selectedTimeOut <= selectedTimeIn) {
                     alert("Time Out must be later than Time In.");
+                    console.warn("⚠️ Invalid time range");
                     return;
                 }
 
-                if (!confirm("Save changes?")) return;
+                if (!confirm("Save changes?")) {
+                    console.log("❌ User cancelled save");
+                    return;
+                }
 
                 button.disabled = true;
                 button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
-                const response = await fetch(`/update_class_schedule/${rowId}/`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": getCSRFToken()
-                    },
-                    body: JSON.stringify({
-                        professor_id: selectedProfId,
-                        time_in: selectedTimeIn,
-                        time_out: selectedTimeOut,
-                        day: selectedDay,
-                        remote_device: selectedDevice
-                    })
-                });
+                const payload = {
+                    professor_id: selectedProfId,
+                    time_in: selectedTimeIn,
+                    time_out: selectedTimeOut,
+                    day: selectedDay,
+                    remote_device: selectedDevice
+                };
+                
+                console.log("📤 Sending payload:", payload);
 
-                if (response.ok) {
-                    profCell.textContent = selectedProfName;
-                    timeInCell.textContent = selectedTimeIn;
-                    timeOutCell.textContent = selectedTimeOut;
-                    dayCell.textContent = selectedDay;
-                    remoteDeviceCell.textContent = selectedDevice;
+                try {
+                    const response = await fetch(`/update_class_schedule/${rowId}/`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": getCSRFToken()
+                        },
+                        body: JSON.stringify(payload)
+                    });
 
-                    button.textContent = "Edit";
-                    button.classList.replace("btn-outline-success", "btn-outline-primary");
-                    
-                    alert("✅ Changes saved successfully!");
-                } else {
-                    alert("❌ Failed to save changes.");
+                    console.log("📥 Response status:", response.status);
+                    console.log("📥 Response ok:", response.ok);
+
+                    const responseData = await response.json();
+                    console.log("📥 Response data:", responseData);
+
+                    if (response.ok) {
+                        profCell.textContent = selectedProfName;
+                        timeInCell.textContent = selectedTimeIn;
+                        timeOutCell.textContent = selectedTimeOut;
+                        dayCell.textContent = selectedDay;
+                        remoteDeviceCell.textContent = selectedDevice;
+
+                        button.textContent = "Edit";
+                        button.classList.replace("btn-outline-success", "btn-outline-primary");
+                        
+                        console.log("✅ Changes saved successfully");
+                        alert("✅ Changes saved successfully!");
+                    } else {
+                        console.error("❌ Server returned error:", responseData);
+                        alert(`❌ Failed to save changes: ${responseData.message || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error("❌ Network error:", error);
+                    alert("❌ Failed to save changes: Network error");
                 }
                 
                 button.disabled = false;
             }
         });
     });
-
 
     // Delete button for class schedule
     document.querySelectorAll('.delete-btn').forEach(button => {
@@ -227,7 +276,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-        // Import Class Schedule CSV
+    // Import Class Schedule CSV
     const importBtn = document.getElementById("importClassBtn");
     const fileInput = document.getElementById("fileInput");
 
@@ -268,7 +317,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     message += `📋 Attendance records: ${data.attendance_created || 0}\n`;
                     message += `⚠️ Skipped: ${data.skipped} class schedule(s)\n\n`;
                     
-                    // Show ALL raw errors first
                     if (data.errors && data.errors.length > 0) {
                         message += `📋 Errors found (${data.errors.length} total):\n`;
                         data.errors.forEach((error, index) => {
@@ -309,7 +357,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     let message = `❌ Import failed!\n\n`;
                     message += `No class schedules were imported.\n\n`;
                     
-                    // Show ALL raw errors first (for debugging)
                     if (data.errors && data.errors.length > 0) {
                         message += `📋 Errors found (${data.errors.length} total):\n`;
                         data.errors.forEach((error, index) => {
@@ -357,10 +404,8 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-
     // ===== ADD COURSE SECTION MODAL =====
     
-    // Preview course section combination
     const courseNameInput = document.getElementById("courseName");
     const sectionNameInput = document.getElementById("sectionName");
     const previewSection = document.getElementById("previewSection");
@@ -376,7 +421,6 @@ document.addEventListener("DOMContentLoaded", function () {
         sectionNameInput.addEventListener('input', updatePreview);
     }
 
-        // Save new course section
     const saveSectionBtn = document.getElementById("saveSectionBtn");
     const addSectionForm = document.getElementById("addSectionForm");
     const courseSectionSelect = document.getElementById("courseSectionSelect");
@@ -413,11 +457,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 console.log('✅ Response ok:', response.ok);
                 console.log('✅ Content-Type:', response.headers.get('content-type'));
 
-                // Get raw text first
                 const rawText = await response.text();
                 console.log('📥 Raw response:', rawText);
 
-                // Try to parse JSON
                 let data;
                 try {
                     data = JSON.parse(rawText);
@@ -429,24 +471,20 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
 
-                // Check response status
                 if (response.ok && data.status === 'success') {
                     console.log('✅ Success! Adding to dropdown...');
                     
-                    // Add to dropdown
                     const newOption = document.createElement('option');
                     newOption.value = data.course_section;
                     newOption.textContent = data.course_section;
                     newOption.selected = true;
                     courseSectionSelect.appendChild(newOption);
 
-                    // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('addSectionModal'));
                     if (modal) {
                         modal.hide();
                     }
 
-                    // Reset form
                     addSectionForm.reset();
                     if (previewSection) {
                         previewSection.textContent = '-';
@@ -468,9 +506,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-
-
-        // Import Class PDF
+    // Import Class PDF
     const importPdfBtn = document.getElementById("importClassPdfBtn");
     const pdfFileInput = document.getElementById("pdfFileInput");
 

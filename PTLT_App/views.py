@@ -1637,34 +1637,52 @@ def add_course_section(request):
 def update_class_schedule(request, pk):
     if request.method == "POST":
         try:
+            print(f"🔵 update_class_schedule called for pk={pk}")
+            
             cls = ClassSchedule.objects.get(id=pk)
+            print(f"✅ Found class schedule: {cls}")
+            
             data = json.loads(request.body)
+            print(f"📥 Received data: {data}")
 
             # Get professor by ID instead of parsing name
             prof_id = data.get("professor_id", "").strip()
+            print(f"📋 Professor ID: '{prof_id}'")
             
             if prof_id:
                 try:
                     professor = Account.objects.get(id=prof_id, role="Instructor")
                     cls.professor = professor
+                    print(f"✅ Found professor: {professor.first_name} {professor.last_name} (ID: {professor.id})")
                 except Account.DoesNotExist:
                     cls.professor = None
+                    print(f"⚠️ Professor with ID {prof_id} not found")
             else:
                 cls.professor = None
+                print("ℹ️ No professor ID provided, setting to None")
 
             cls.time_in = data.get("time_in")
             cls.time_out = data.get("time_out")
             cls.days = data.get("day")
             cls.remote_device = data.get("remote_device")
+            
+            print(f"📝 Saving: time_in={cls.time_in}, time_out={cls.time_out}, days={cls.days}, device={cls.remote_device}")
             cls.save()
+            print("✅ Saved successfully")
 
             return JsonResponse({"status": "success"})
         except ClassSchedule.DoesNotExist:
+            print(f"❌ ClassSchedule with pk={pk} does not exist")
             return JsonResponse({"status": "error", "message": "Class schedule not found"}, status=404)
         except Exception as e:
+            print(f"❌ Exception: {e}")
+            import traceback
+            traceback.print_exc()
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
     
+    print(f"⚠️ Invalid request method: {request.method}")
     return JsonResponse({"status": "error", "message": "Invalid request method"}, status=400)
+
 
 
 @csrf_exempt
