@@ -81,7 +81,12 @@ class ClassSchedule(models.Model):
     room_assignment = models.CharField(max_length=100, verbose_name="Room Assignment")
 
     def __str__(self):
-        return f"{self.course_code} - {self.course_section} ({self.professor.last_name})"
+        if self.professor:
+            prof_name = f"{self.professor.first_name} {self.professor.last_name}"
+        else:
+            prof_name = "Unassigned"
+        return f"{self.course_code} - {self.course_section} ({prof_name})"
+
 
     @property
     def day_list(self):

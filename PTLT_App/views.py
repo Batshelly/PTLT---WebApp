@@ -1640,48 +1640,64 @@ def update_class_schedule(request, pk):
             print(f"🔵 update_class_schedule called for pk={pk}")
             
             cls = ClassSchedule.objects.get(id=pk)
-            print(f"✅ Found class schedule: {cls}")
+            
+            # Safer logging - don't rely on __str__ method
+            print(f"✅ Found class schedule ID: {cls.id}, Course: {cls.course_code}")
             
             data = json.loads(request.body)
             print(f"📥 Received data: {data}")
 
             # Get professor by ID instead of parsing name
             prof_id = data.get("professor_id", "").strip()
-            print(f"📋 Professor ID: '{prof_id}'")
+            print(f"📋 Professor ID received: '{prof_id}'")
             
             if prof_id:
                 try:
                     professor = Account.objects.get(id=prof_id, role="Instructor")
                     cls.professor = professor
-                    print(f"✅ Found professor: {professor.first_name} {professor.last_name} (ID: {professor.id})")
+                    print(f"✅ Assigned professor: {professor.first_name} {professor.last_name} (ID: {professor.id})")
                 except Account.DoesNotExist:
                     cls.professor = None
-                    print(f"⚠️ Professor with ID {prof_id} not found")
+                    print(f"⚠️ Professor with ID '{prof_id}' not found - setting to None")
             else:
                 cls.professor = None
-                print("ℹ️ No professor ID provided, setting to None")
+                print("ℹ️ No professor ID provided - setting to None")
 
+            # Update other fields
             cls.time_in = data.get("time_in")
             cls.time_out = data.get("time_out")
             cls.days = data.get("day")
             cls.remote_device = data.get("remote_device")
             
-            print(f"📝 Saving: time_in={cls.time_in}, time_out={cls.time_out}, days={cls.days}, device={cls.remote_device}")
+            print(f"📝 Updating fields:")
+            print(f"   time_in: {cls.time_in}")
+            print(f"   time_out: {cls.time_out}")
+            print(f"   days: {cls.days}")
+            print(f"   remote_device: {cls.remote_device}")
+            print(f"   professor: {cls.professor_id}")
+            
             cls.save()
-            print("✅ Saved successfully")
+            print("✅ ClassSchedule saved successfully!")
 
             return JsonResponse({"status": "success"})
+            
         except ClassSchedule.DoesNotExist:
             print(f"❌ ClassSchedule with pk={pk} does not exist")
             return JsonResponse({"status": "error", "message": "Class schedule not found"}, status=404)
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON decode error: {e}")
+            return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+            
         except Exception as e:
-            print(f"❌ Exception: {e}")
+            print(f"❌ Unexpected exception: {e}")
             import traceback
             traceback.print_exc()
             return JsonResponse({"status": "error", "message": str(e)}, status=500)
     
     print(f"⚠️ Invalid request method: {request.method}")
     return JsonResponse({"status": "error", "message": "Invalid request method"}, status=400)
+
 
 
 
