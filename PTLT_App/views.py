@@ -1265,16 +1265,9 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': [f'Server error: {str(e)}']
         }, status=500)
-
-
-
-
-
-
-#try pdf import
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
-    """Import class schedule from PDF with duplicate detection"""
+    """Import class schedule from PDF with duplicate detection and Unicode support"""
     if 'pdf_file' not in request.FILES:
         return JsonResponse({'status': 'error', 'message': 'No PDF file provided'}, status=400)
     
@@ -1289,91 +1282,155 @@ def import_class_from_pdf(request):
         for page in pdf_reader.pages:
             full_text += page.extract_text() + "\n"
         
+        # Clean up text - remove page breaks and normalize spacing
+        full_text = re.sub(r'Page \d+ / \d+', '', full_text)
+        full_text = re.sub(r'Page \d+ \d+', '', full_text)
+        full_text = re.sub(r'\n{3,}', '\n\n', full_text)
+        
         # Initialize data containers
         schedule_data = {}
         all_students = []
         
-        # Extract Schedule ID
-        schedule_id_match = re.search(r'Schedule ID\s*:\s*([A-Z0-9]+)', full_text)
+        # ========== SCHEDULE ID EXTRACTION ==========
+        schedule_id_match = re.search(r'Schedule\s*ID\s*:\s*([A-Z0-9]+)', full_text, re.IGNORECASE)
         if schedule_id_match:
             schedule_data['schedule_id'] = schedule_id_match.group(1).strip()
         
-        # Extract Subject (Course Code - Course Title)
-        subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s*Venue|\n)', full_text)
+        # ========== SUBJECT EXTRACTION ==========
+        subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)\s+Venue', full_text, re.DOTALL)
+        
+        if not subject_match:
+            subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s+Course/Section|\n)', full_text, re.DOTALL)
+        
+        if not subject_match:
+            subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s{2,}|\n)', full_text)
+        
         if subject_match:
             schedule_data['course_code'] = subject_match.group(1).strip()
-            schedule_data['course_title'] = subject_match.group(2).strip()
+            schedule_data['course_title'] = ' '.join(subject_match.group(2).strip().split())
         
-        # Extract Day/Time
-        day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU])\s+(\d{1,2}:\d{2}[AP]M)-(\d{1,2}:\d{2}[AP]M)', full_text)
+        # ========== DAY/TIME EXTRACTION ==========
+        day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU])\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
+        if not day_time_match:
+            day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU]+)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
+        if not day_time_match:
+            day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU/]+)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
         if day_time_match:
             day_map = {
                 'M': 'Monday', 'T': 'Tuesday', 'W': 'Wednesday',
                 'R': 'Thursday', 'F': 'Friday', 'S': 'Saturday', 'U': 'Sunday'
             }
-            schedule_data['day'] = day_map.get(day_time_match.group(1), 'Monday')
             
-            time_in_str = day_time_match.group(2)
-            time_out_str = day_time_match.group(3)
+            day_str = day_time_match.group(1).replace('/', '')
+            if len(day_str) == 1:
+                schedule_data['day'] = day_map.get(day_str, 'Monday')
+            else:
+                days = [day_map.get(d, d) for d in day_str if d in day_map]
+                schedule_data['day'] = '/'.join(days)
             
-            schedule_data['time_in'] = datetime.strptime(time_in_str, '%I:%M%p').time()
-            schedule_data['time_out'] = datetime.strptime(time_out_str, '%I:%M%p').time()
+            time_in_str = day_time_match.group(2).replace(' ', '')
+            time_out_str = day_time_match.group(3).replace(' ', '')
+            
+            try:
+                schedule_data['time_in'] = datetime.strptime(time_in_str, '%I:%M%p').time()
+                schedule_data['time_out'] = datetime.strptime(time_out_str, '%I:%M%p').time()
+            except ValueError:
+                schedule_data['time_in'] = datetime.strptime(time_in_str.replace(' ', ''), '%I:%M%p').time()
+                schedule_data['time_out'] = datetime.strptime(time_out_str.replace(' ', ''), '%I:%M%p').time()
         
-        # Extract Course/Section
-        section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s*\n|1st Semester)', full_text)
+        # ========== COURSE/SECTION EXTRACTION ==========
+        section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s*\n|1st Semester|2nd Semester|Summer)', full_text)
+        
+        if not section_match:
+            section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s+Student No\.|\n)', full_text)
+        
         if section_match:
             section_str = section_match.group(1).strip()
-            # Handle format like "BET-COET-C-BET-COET-C-4A-C"
             parts = section_str.split('-')
-            if len(parts) >= 3:
-                # Extract course and section
+            
+            if len(parts) >= 6:
                 mid_point = len(parts) // 2
                 schedule_data['course_name'] = '-'.join(parts[:mid_point])
                 schedule_data['section_name'] = '-'.join(parts[-2:])
+            elif len(parts) >= 3:
+                mid_point = len(parts) // 2
+                schedule_data['course_name'] = '-'.join(parts[:mid_point])
+                schedule_data['section_name'] = '-'.join(parts[mid_point:])
+            elif len(parts) == 2:
+                schedule_data['course_name'] = parts[0]
+                schedule_data['section_name'] = parts[1]
+            else:
+                schedule_data['course_name'] = section_str
+                schedule_data['section_name'] = 'A'
         
-        # Extract student information
-        student_pattern = r'\d+\.\s*(TUPC-\d{2}-\d{4})\s+([A-Z\s,]+?)(?:\s+BET-COET|$)'
-        student_matches = re.finditer(student_pattern, full_text)
+        # ========== STUDENT EXTRACTION (ULTRA PERMISSIVE) ==========
+        # Match anything that looks like: number + TUPC-ID + name + course code
+        # Using .+? (any character) instead of specific character classes
+        student_pattern = r'(\d+)\.+\s*(TUPC-\d{2}-\d{4})\s+(.+?)\s+([A-Z]{3,}[A-Z-]*)\s*(?:\n|$|Remarks|Page)'
+        student_matches = list(re.finditer(student_pattern, full_text, re.DOTALL | re.UNICODE))
+        
+        print(f"DEBUG: Found {len(student_matches)} student matches")
 
         for match in student_matches:
-            student_no = match.group(1).strip()
-            name = match.group(2).strip()
-            
-            # Extract ID (TUPC-22-0352 → 220352)
-            id_match = re.match(r'TUPC-(\d{2})-(\d{4})', student_no)
-            if not id_match:
-                continue
-            
-            short_id = id_match.group(1) + id_match.group(2)
-            
-            # Parse name (LASTNAME, FIRSTNAME SECONDNAME MIDDLENAME)
-            name_parts = name.split(',')
-
-            if len(name_parts) >= 2:
+            try:
+                student_no = match.group(2).strip()
+                name_raw = match.group(3).strip()
+                
+                # Clean the name - remove any non-letter characters except comma and space
+                # This handles cases where special chars become weird symbols
+                name = re.sub(r'[^\w\s,áéíóúÁÉÍÓÚñÑüÜ-]', '', name_raw)
+                name = ' '.join(name.split())  # Normalize whitespace
+                
+                # Extract ID (TUPC-24-0107 → 240107)
+                id_match = re.match(r'[A-Z]+-(\d{2})-(\d{4})', student_no)
+                if not id_match:
+                    print(f"DEBUG: Skipping - couldn't parse ID: {student_no}")
+                    continue
+                
+                short_id = id_match.group(1) + id_match.group(2)
+                
+                # Parse name (LASTNAME, FIRSTNAME MIDDLENAME)
+                if ',' not in name:
+                    print(f"DEBUG: Skipping - no comma in name: {name}")
+                    continue
+                
+                name_parts = name.split(',', 1)  # Split only on first comma
+                if len(name_parts) < 2:
+                    print(f"DEBUG: Skipping - couldn't split name: {name}")
+                    continue
+                
                 last_name = name_parts[0].strip().title()
+                first_name = name_parts[1].strip().title()  # Take ALL names after comma
                 
-                # Split the part after comma and take only first 2 names
-                name_after_comma = name_parts[1].strip().split()
+                # Skip if either part is empty
+                if not last_name or not first_name:
+                    print(f"DEBUG: Skipping - empty name parts: '{last_name}' / '{first_name}'")
+                    continue
                 
-                if len(name_after_comma) >= 2:
-                    first_name = f"{name_after_comma[0]} {name_after_comma[1]}".title()
-                elif len(name_after_comma) == 1:
-                    first_name = name_after_comma[0].title()
-                else:
-                    first_name = name_parts[1].strip().title()
+                print(f"DEBUG: Parsed student #{match.group(1)} - ID: {short_id}, Name: {first_name} {last_name}")
                 
                 all_students.append({
                     'user_id': short_id,
                     'first_name': first_name,
                     'last_name': last_name
                 })
+                
+            except Exception as e:
+                print(f"DEBUG: Error parsing student entry: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                continue
         
-        # Validate we got the required schedule data
+        # ========== VALIDATION ==========
         required_fields = ['course_code', 'course_title', 'day', 'time_in', 'time_out', 'course_name', 'section_name']
         missing_fields = [f for f in required_fields if f not in schedule_data]
         
         if missing_fields:
             print(f"❌ Missing fields: {missing_fields}")
+            print(f"DEBUG: Extracted schedule_data: {schedule_data}")
             return JsonResponse({
                 'status': 'error',
                 'message': f'Could not parse schedule information. Missing: {", ".join(missing_fields)}'
@@ -1381,18 +1438,18 @@ def import_class_from_pdf(request):
         
         if not all_students:
             print(f"❌ No students found in PDF")
+            print(f"DEBUG: First 2000 chars of text:\n{full_text[:2000]}")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Could not find any students in the PDF file'
             }, status=400)
         
-        # Create or get CourseSection
+        # ========== DATABASE OPERATIONS ==========
         course_section, created = CourseSection.objects.get_or_create(
             course_name=schedule_data['course_name'],
             section_name=schedule_data['section_name']
         )
         
-        # ⭐ CHECK IF CLASS SCHEDULE WITH SAME SECTION AND TIME ALREADY EXISTS
         existing_schedule = ClassSchedule.objects.filter(
             course_section=course_section,
             days=schedule_data['day'],
@@ -1401,22 +1458,14 @@ def import_class_from_pdf(request):
         ).first()
         
         if existing_schedule:
-            print(f"⚠️ DUPLICATE DETECTED:")
-            print(f"   Course/Section: {course_section.course_section}")
-            print(f"   Day: {schedule_data['day']}")
-            print(f"   Time: {schedule_data['time_in']} - {schedule_data['time_out']}")
-            print(f"   Existing ClassSchedule ID: {existing_schedule.id}")
-            
             return JsonResponse({
                 'status': 'error',
                 'message': f'Class schedule already exists for {course_section.course_section} on {schedule_data["day"]} from {schedule_data["time_in"]} to {schedule_data["time_out"]}'
             }, status=400)
         
-        # Create ClassSchedule (only if it doesn't exist)
         print(f"✅ Creating new ClassSchedule:")
         print(f"   Course/Section: {course_section.course_section}")
-        print(f"   Day: {schedule_data['day']}")
-        print(f"   Time: {schedule_data['time_in']} - {schedule_data['time_out']}")
+        print(f"   Students found: {len(all_students)}")
         
         class_schedule = ClassSchedule.objects.create(
             course_code=schedule_data['course_code'],
@@ -1432,14 +1481,11 @@ def import_class_from_pdf(request):
             room_assignment='-'
         )
         
-        # Create student accounts
         created_students = 0
         skipped_students = 0
         
         for student_info in all_students:
             if not Account.objects.filter(user_id=student_info['user_id']).exists():
-                
-                print(f"DEBUG: Saving student - ID: {student_info['user_id']}, First: '{student_info['first_name']}', Last: '{student_info['last_name']}'")
                 Account.objects.create(
                     user_id=student_info['user_id'],
                     email='',
@@ -1456,7 +1502,6 @@ def import_class_from_pdf(request):
             else:
                 skipped_students += 1
         
-        # Update student count
         class_schedule.student_count = len(all_students)
         class_schedule.save()
         
@@ -1485,6 +1530,8 @@ def import_class_from_pdf(request):
             'status': 'error',
             'message': f'Failed to parse PDF: {str(e)}'
         }, status=500)
+
+
 
         
 @admin_required
