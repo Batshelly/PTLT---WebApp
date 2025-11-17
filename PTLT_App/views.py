@@ -24,6 +24,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
+from django.db import IntegrityError
 import datetime
 import csv
 import io
@@ -308,9 +309,11 @@ def login_view(request):
         
     return render(request, 'login.html')
 
-
-# NEW VIEW: OTP Verification for Login
 def verify_login_otp(request):
+    """
+    Verify OTP and authenticate user.
+    Handles dual Account/User table architecture safely.
+    """
     # Check if user came from login page with OTP
     if 'login_otp' not in request.session or 'login_email' not in request.session:
         messages.error(request, "Session expired. Please request a new OTP.")
@@ -323,74 +326,117 @@ def verify_login_otp(request):
         otp_timestamp = request.session.get('otp_timestamp')
         
         # Check OTP expiration (5 minutes)
-        otp_time = datetime.fromisoformat(otp_timestamp)
-        current_time = datetime.now()
-        time_diff = (current_time - otp_time).total_seconds() / 60
-        
-        if time_diff > 5:
-            # OTP expired
-            del request.session['login_otp']
-            del request.session['login_email']
-            del request.session['otp_timestamp']
-            messages.error(request, "OTP has expired. Please request a new one.")
-            return redirect('login')
-        
-        # Validate OTP
-        if str(stored_otp) == user_otp:
-            try:
-                # Get the account
-                account = Account.objects.get(email=email)
-                
-                # Get or create Django User for session
-                try:
-                    user_obj = User.objects.get(email=email)
-                except User.DoesNotExist:
-                    # Create Django User if doesn't exist
-                    user_obj = User.objects.create_user(
-                        username=account.user_id,
-                        email=account.email,
-                        password=get_random_string(12),
-                        first_name=account.first_name,
-                        last_name=account.last_name
-                    )
-                
-                # Log the user in (backend bypasses password check)
-                from django.contrib.auth import login as auth_login
-                auth_login(request, user_obj, backend='django.contrib.auth.backends.ModelBackend')
-                
-                # Set session variables
-                request.session['user_id'] = account.user_id
-                request.session['role'] = account.role
-                
-                # Clear OTP data from session
+        try:
+            otp_time = datetime.fromisoformat(otp_timestamp)
+            current_time = datetime.now()
+            time_diff = (current_time - otp_time).total_seconds() / 60
+            
+            if time_diff > 5:
+                # OTP expired - clear session
                 del request.session['login_otp']
                 del request.session['login_email']
                 del request.session['otp_timestamp']
-                
-                messages.success(request, f"Welcome back, {account.first_name}!")
-                
-                # Redirect based on role
-                if account.role == 'Admin':
-                    return redirect('account_management')
-                elif account.role == 'Instructor':
-                    return redirect('instructor_schedule')
-                else:
-                    messages.error(request, "Unknown user role.")
-                    return redirect('login')
-                    
-            except Account.DoesNotExist:
-                messages.error(request, "Account not found.")
+                messages.error(request, "OTP has expired. Please request a new one.")
                 return redirect('login')
-        else:
-            # Invalid OTP - but don't clear session, allow retry
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid session data. Please try again.")
+            return redirect('login')
+        
+        # Validate OTP
+        if str(stored_otp) != user_otp:
+            # Invalid OTP - don't clear session, allow retry
             messages.error(request, "Invalid OTP. Please try again.")
             return render(request, 'verify_login_otp.html', {'email': email})
+        
+        # OTP is valid - proceed with authentication
+        try:
+            # 1. Get the Account record by email
+            account = Account.objects.get(email=email)
+            
+            # 2. Check account status
+            if account.status != 'Active':
+                messages.error(request, f"Your account is {account.status}. Please contact admin.")
+                return redirect('login')
+            
+            # 3. Get or create Django User (synchronized to Account)
+            try:
+                # Try to get existing User by username (which maps to account.user_id)
+                user_obj = User.objects.get(username=account.user_id)
+                
+                # Update User fields to match Account (in case email changed)
+                needs_update = False
+                if user_obj.email != account.email:
+                    user_obj.email = account.email
+                    needs_update = True
+                if user_obj.first_name != account.first_name:
+                    user_obj.first_name = account.first_name
+                    needs_update = True
+                if user_obj.last_name != account.last_name:
+                    user_obj.last_name = account.last_name
+                    needs_update = True
+                
+                if needs_update:
+                    user_obj.save()
+                    
+            except User.DoesNotExist:
+                # User doesn't exist - create it
+                try:
+                    user_obj = User.objects.create_user(
+                        username=account.user_id,
+                        email=account.email,
+                        password=get_random_string(12),  # Random password (not used for login)
+                        first_name=account.first_name,
+                        last_name=account.last_name
+                    )
+                except IntegrityError as e:
+                    # Handle duplicate username gracefully
+                    if 'username' in str(e).lower() or 'duplicate' in str(e).lower():
+                        messages.error(request, "Account synchronization error. Please contact admin.")
+                    else:
+                        messages.error(request, "Authentication failed. Please try again.")
+                    return redirect('login')
+            
+            # 4. Log the user in (backend bypasses password check)
+            auth_login(request, user_obj, backend='django.contrib.auth.backends.ModelBackend')
+            
+            # 5. Set session variables
+            request.session['user_id'] = account.user_id
+            request.session['role'] = account.role
+            
+            # 6. Clear OTP data from session
+            del request.session['login_otp']
+            del request.session['login_email']
+            del request.session['otp_timestamp']
+            
+            messages.success(request, f"Welcome back, {account.first_name}!")
+            
+            # 7. Redirect based on role
+            if account.role == 'Admin':
+                return redirect('account_management')
+            elif account.role == 'Instructor':
+                return redirect('instructor_schedule')
+            elif account.role == 'Student':
+                return redirect('student_dashboard')  # Adjust to your actual student URL
+            else:
+                messages.error(request, "Unknown user role.")
+                return redirect('login')
+                
+        except Account.DoesNotExist:
+            messages.error(request, "Account not found. Please check your email or contact admin.")
+            return redirect('login')
+        
+        except Exception as e:
+            # Catch any unexpected errors
+            messages.error(request, "An unexpected error occurred. Please try again.")
+            # Log the error for debugging (optional)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Login error for {email}: {str(e)}")
+            return redirect('login')
     
     # GET request - show OTP entry form
     email = request.session.get('login_email')
     return render(request, 'verify_login_otp.html', {'email': email})
-
-
 # NEW VIEW: Resend OTP
 def resend_login_otp(request):
     if 'login_email' not in request.session:
