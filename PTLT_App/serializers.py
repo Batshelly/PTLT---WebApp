@@ -77,7 +77,7 @@ class MobileAttendanceSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = AttendanceRecord
-        fields = ['id', 'date', 'class_schedule', 'professor', 'student', 'course_section', 'time_in', 'time_out', 'fingerprint_data', 'status']
+        fields = ['id', 'date', 'class_schedule', 'professor', 'student', 'course_section', 'time_in', 'time_out', 'professor_time_in', 'professor_time_out', 'fingerprint_data', 'status']
     
     def create(self, validated_data):
         # Extract user_id strings

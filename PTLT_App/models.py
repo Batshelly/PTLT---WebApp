@@ -124,6 +124,9 @@ class AttendanceRecord(models.Model):
 
     time_in = models.TimeField(verbose_name="Time In")
     time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
+    
+    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
+    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
 
     fingerprint_data = models.BinaryField(verbose_name="Fingerprint Data")
 
