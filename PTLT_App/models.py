@@ -132,7 +132,7 @@ class AttendanceRecord(models.Model):
 
     STATUS_CHOICES = [
         ('Present', 'Present'),
-        ('Late', 'Late'),
+        ('LATE', 'Late'),
         ('Absent', 'Absent'),
         ('Excused', 'Excused'),
         ('No time-out', 'No time-out'),
