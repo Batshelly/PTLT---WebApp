@@ -88,9 +88,7 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PyPDF2 import PdfMerger
-import shutil
-import requests
-import cloudconvert  # pip install cloudconvert
+
 
 
 
