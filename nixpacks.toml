@@ -11,14 +11,13 @@ nixPkgs = [
     "libxml2",
     "libxslt",
     "libjpeg",
-    "zlib"
+    "zlib",
+    "libreoffice"   # ← ADD THIS
 ]
 
 # Install Python dependencies
 [phases.install]
 cmds = [
-    "apt-get update",
-    "apt-get install -y libreoffice libreoffice-writer",
     "pip install -r requirements.txt"
 ]
 
