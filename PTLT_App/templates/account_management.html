@@ -230,7 +230,7 @@
                             <div class="action-buttons">
                                 <button class="btn btn-sm btn-outline-primary edit-btn"
                                         data-id="{{ account.user_id }}"
-                                        {% if account.user_id == '000000' %} disabled {% endif %}>
+                                        {% if account.user_id == '000000' or account.status == 'Pending' %} disabled {% endif %}>
                                     <i class="bi bi-pencil"></i> Edit
                                 </button>
                                 {% if account.status == 'Active' %}
@@ -238,7 +238,7 @@
                                             data-id="{{ account.id }}"
                                             data-status="Inactive"
                                             data-user-id="{{ account.user_id }}"
-                                            {% if account.user_id == '000000' %} disabled {% endif %}>
+                                            {% if account.user_id == '000000' or account.status == 'Pending' %} disabled {% endif %}>
                                         <i class="bi bi-lock"></i> Deactivate
                                     </button>
                                 {% else %}
@@ -246,7 +246,7 @@
                                             data-id="{{ account.id }}"
                                             data-status="Active"
                                             data-user-id="{{ account.user_id }}"
-                                            {% if account.user_id == '000000' %} disabled {% endif %}>
+                                            {% if account.user_id == '000000' or account.status == 'Pending' %} disabled {% endif %}>
                                         <i class="bi bi-unlock"></i> Activate
                                     </button>
                                 {% endif %}
