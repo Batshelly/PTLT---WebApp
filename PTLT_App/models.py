@@ -51,9 +51,6 @@ class Account(models.Model):
 
 
 class ClassSchedule(models.Model):
-    time_in = models.TimeField(verbose_name="Time In")
-    time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
-    
     professor = models.ForeignKey(
         Account,
         on_delete=models.CASCADE,
@@ -64,7 +61,6 @@ class ClassSchedule(models.Model):
     )
     course_title = models.CharField(max_length=255, verbose_name="Course Title", blank=True, null=True)
     course_code = models.CharField(max_length=50, verbose_name="Course Code")
-    
 
     course_section = models.ForeignKey(
         CourseSection,
@@ -74,8 +70,13 @@ class ClassSchedule(models.Model):
         verbose_name="Course & Section"
     )
 
+    # SCHEDULED CLASS TIMES
     time_in = models.TimeField(verbose_name="Time In")
     time_out = models.TimeField(verbose_name="Time Out")
+    
+    # SCHEDULED PROFESSOR TIMES (for display in document)
+    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
+    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
 
     days = models.CharField(max_length=50, verbose_name="Day/s")  # E.g. "Mon/Wed/Fri"
     grace_period = models.PositiveIntegerField(verbose_name="Grace Period (minutes)")
@@ -90,7 +91,6 @@ class ClassSchedule(models.Model):
         else:
             prof_name = "Unassigned"
         return f"{self.course_code} - {self.course_section} ({prof_name})"
-
 
     @property
     def day_list(self):
@@ -108,7 +108,6 @@ class ClassSchedule(models.Model):
                 if abbr.strip()[:3].lower() in day_map]
 
 
-
 class AttendanceRecord(models.Model):
     date = models.DateField(default=timezone.now, verbose_name="Date")
 
@@ -116,17 +115,23 @@ class AttendanceRecord(models.Model):
     professor = models.ForeignKey(
         Account,
         on_delete=models.CASCADE,
-        related_name="attendance_as_professor"  # 👈 unique name
+        related_name="attendance_as_professor"
     )
     student = models.ForeignKey(
         Account,
         on_delete=models.CASCADE,
-        related_name="attendance_as_student"   # 👈 unique name
+        related_name="attendance_as_student"
     )
 
     course_section = models.ForeignKey(CourseSection, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Course & Section")
     
+    # STUDENT ACTUAL TIMES (from CSV)
+    time_in = models.TimeField(verbose_name="Time In")
+    time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
     
+    # PROFESSOR ACTUAL TIMES (from CSV - per date)
+    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
+    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
 
     fingerprint_data = models.BinaryField(verbose_name="Fingerprint Data")
 
@@ -141,6 +146,7 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return f"{self.date} - {self.student.user_id} - {self.status}"
+
     
 
 class Semester(models.Model):
