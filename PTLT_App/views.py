@@ -2591,49 +2591,14 @@ from PyPDF2 import PdfMerger
 import subprocess
 import tempfile
 
-import cloudconvert
-from django.conf import settings
 
-cloudconvert.configure(
-    api_key=settings.CLOUDCONVERT_API_KEY,
-    sandbox=settings.CLOUDCONVERT_SANDBOX,
-)
-
-def _convert_docx_to_pdf_cloudconvert(input_path, output_path):
-    job = cloudconvert.Job.create(payload={
-        "tasks": {
-            "import-my-file": {"operation": "import/upload"},
-            "convert-my-file": {
-                "operation": "convert",
-                "input": "import-my-file",
-                "output_format": "pdf",
-            },
-            "export-my-file": {
-                "operation": "export/url",
-                "input": "convert-my-file",
-            },
-        }
-    })
-    import_task = next(t for t in job["tasks"] if t["operation"] == "import/upload")
-    cloudconvert.Task.upload(file_name=input_path, task=import_task)
-    job = cloudconvert.Job.wait(job["id"])
-    export_task = next(t for t in job["tasks"] if t["operation"] == "export/url")
-    file_info = export_task["result"]["files"][0]
-    url = file_info["url"]
-
-    r = requests.get(url, stream=True, timeout=120)
-    r.raise_for_status()
-    with open(output_path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
 
 
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate Attendance Report - 60 Students, Both Templates, PDF Output"""
+    """Generate Attendance Report - 60 Students, Both Templates, DOCX Output"""
     logger = logging.getLogger(__name__)
-    logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
+    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
     
     date_range = request.GET.get('date_range')
     if not date_range:
@@ -2789,7 +2754,7 @@ def generate_attendance_docx(request, schedule_id):
                                         run.font.name = 'Arial'
                                         run.font.size = Pt(8)
 
-    # ==================== TEMPLATE 2 PROCESSING ====================
+    # ==================== TEMPLATE 2 PROCESSING (still filled, but not returned here) ====================
     doc2 = Document(template2_path)
     
     replacements2 = {
@@ -2801,7 +2766,6 @@ def generate_attendance_docx(request, schedule_id):
         '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
     }
 
-    # Date headers for Template2
     for i in range(1, 9):
         if i - 1 < len(attendance_dates):
             date_obj = attendance_dates[i-1]
@@ -2818,7 +2782,6 @@ def generate_attendance_docx(request, schedule_id):
         else:
             replacements2[f'{{{{date{i}}}}}'] = ''
 
-    # Student data for Template2 (students 41-60)
     time_cells2 = set()
     for i in range(1, 41):
         if i - 1 < len(students_template2):
@@ -2848,7 +2811,6 @@ def generate_attendance_docx(request, schedule_id):
 
     logger.error(f"✓ Built {len(replacements2)} replacements for Template2")
 
-    # Apply replacements to Template2 WITH FONT STYLING
     for paragraph in doc2.paragraphs:
         for key, value in replacements2.items():
             if key in paragraph.text:
@@ -2869,56 +2831,19 @@ def generate_attendance_docx(request, schedule_id):
                                         run.font.name = 'Arial'
                                         run.font.size = Pt(8)
 
-    # ==================== SAVE DOCX & CONVERT TO PDF (CloudConvert) ====================
-    temp_dir = tempfile.gettempdir()
-    docx1_path = os.path.join(temp_dir, f"attendance_template1_{schedule_id}.docx")
-    docx2_path = os.path.join(temp_dir, f"attendance_template2_{schedule_id}.docx")
-    pdf1_path = os.path.join(temp_dir, f"attendance_template1_{schedule_id}.pdf")
-    pdf2_path = os.path.join(temp_dir, f"attendance_template2_{schedule_id}.pdf")
-    final_pdf_path = os.path.join(temp_dir, f"attendance_{schedule_id}{date_range_str}.pdf")
-    
-    doc1.save(docx1_path)
-    doc2.save(docx2_path)
-    logger.error("✓ Saved temporary DOCX files")
+    # ==================== RETURN DOCX (Template 1) ====================
+    out = BytesIO()
+    doc1.save(out)
+    out.seek(0)
 
-    try:
-        _convert_docx_to_pdf_cloudconvert(docx1_path, pdf1_path)
-        _convert_docx_to_pdf_cloudconvert(docx2_path, pdf2_path)
-        logger.error("✓ Converted DOCX to PDF via CloudConvert")
-    except Exception as e:
-        logger.error(f"✗ PDF conversion via CloudConvert failed: {str(e)}")
-        return HttpResponse(f"PDF conversion error (CloudConvert): {str(e)}", status=500)
-
-    # Merge PDFs
-    try:
-        pdf_merger = PdfMerger()
-        pdf_merger.append(pdf1_path)
-        pdf_merger.append(pdf2_path)
-        
-        pdf_merger.write(final_pdf_path)
-        pdf_merger.close()
-        
-        logger.error("✓ Merged PDFs")
-        
-        with open(final_pdf_path, 'rb') as pdf_file:
-            response = HttpResponse(pdf_file.read(), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}{date_range_str}.pdf"'
-            logger.error("✓ PDF sent to user")
-            return response
-    
-    except Exception as e:
-        logger.error(f"✗ PDF merge failed: {str(e)}")
-        return HttpResponse(f"Error merging PDFs: {str(e)}", status=500)
-    
-    finally:
-        try:
-            for f in [docx1_path, docx2_path, pdf1_path, pdf2_path, final_pdf_path]:
-                if os.path.exists(f):
-                    os.remove(f)
-            logger.error("✓ Cleaned up temporary files")
-        except Exception as e:
-            logger.error(f"⚠️ Error cleaning temp files: {str(e)}")
-
+    filename = f"attendance_{schedule_id}{date_range_str}.docx"
+    response = HttpResponse(
+        out.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    logger.error("✓ DOCX sent to user")
+    return response
 
 
 
