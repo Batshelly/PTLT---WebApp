@@ -81,7 +81,12 @@ class ClassSchedule(models.Model):
     room_assignment = models.CharField(max_length=100, verbose_name="Room Assignment")
 
     def __str__(self):
-        return f"{self.course_code} - {self.course_section} ({self.professor.last_name})"
+        if self.professor:
+            prof_name = f"{self.professor.first_name} {self.professor.last_name}"
+        else:
+            prof_name = "Unassigned"
+        return f"{self.course_code} - {self.course_section} ({prof_name})"
+
 
     @property
     def day_list(self):
@@ -119,12 +124,15 @@ class AttendanceRecord(models.Model):
 
     time_in = models.TimeField(verbose_name="Time In")
     time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
+    
+    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
+    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
 
     fingerprint_data = models.BinaryField(verbose_name="Fingerprint Data")
 
     STATUS_CHOICES = [
         ('Present', 'Present'),
-        ('Late', 'Late'),
+        ('LATE', 'Late'),
         ('Absent', 'Absent'),
         ('Excused', 'Excused'),
         ('No time-out', 'No time-out'),
@@ -134,13 +142,41 @@ class AttendanceRecord(models.Model):
     def __str__(self):
         return f"{self.date} - {self.student.user_id} - {self.status}"
     
+
 class Semester(models.Model):
+    SEMESTER_CHOICES = [
+        ('First Semester', 'First Semester'),
+        ('Second Semester', 'Second Semester'),
+        ('Summer', 'Summer'),
+    ]
+    
+    semester_name = models.CharField(max_length=50, choices=SEMESTER_CHOICES, default='First Semester')
+    school_year = models.CharField(max_length=20, default='2025-2026')
     start_date = models.DateField()
     end_date = models.DateField()
+    is_active = models.BooleanField(default=True)
     is_archived = models.BooleanField(default=False)
+    created_at = models.DateTimeField(null=True, blank=True, default=timezone.now)  # FIXED: Changed from auto_now_add=True
+    updated_at = models.DateTimeField(auto_now=True)  # ADDED: For tracking updates
+
+    class Meta:
+        ordering = ['-start_date']
+        unique_together = ['semester_name', 'school_year']
 
     def __str__(self):
-        return f"{self.start_date} - {self.end_date}"
+        return f"{self.semester_name} ({self.school_year})"
+
+    @property
+    def has_ended(self):
+        return timezone.now().date() > self.end_date
+
+    def save(self, *args, **kwargs):
+        # Deactivate all other semesters when creating a new active one
+        if self.is_active:
+            Semester.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+        super().save(*args, **kwargs)
+
+
 
 class AccountUploadNotification(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)

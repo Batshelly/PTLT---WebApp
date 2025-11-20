@@ -26,7 +26,8 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-c(sj)ii%9f+e!gji&85p_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,tupc-ptlt.online,www.tupc-ptlt.online').split(',')
+
 
 # Application definition
 INSTALLED_APPS = [
@@ -49,6 +50,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'PTLT_App.middleware.SessionExpiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -166,17 +168,32 @@ REST_FRAMEWORK = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:8080').split(',')
-CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL', 'False') == 'True'
+#CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:8080').split(',')
+#CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL', 'False') == 'True'
+# CORS Settings - Only allow your specific domains
+CORS_ALLOWED_ORIGINS = [
+    'https://tupc-ptlt.online',
+    'https://www.tupc-ptlt.online',
+]
+CORS_ALLOW_ALL_ORIGINS = False
+
 
 # 🔥 UPDATED: CSRF Settings for Railway
 # Replace 'your-app-name' with your actual Railway app domain
 CSRF_TRUSTED_ORIGINS = [
     'https://*.railway.app',
-    'https://tupc-ptlt.online',  # Your domain
+    'https://tupc-ptlt.online',
+    'https://www.tupc-ptlt.online',  # Add www version
     'http://localhost:8000',
     'http://127.0.0.1:8000',
 ]
+
+# Session configuration (applies to both development and production)
+SESSION_COOKIE_AGE = 3600  # 30 minutes in seconds
+SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser closes
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'  # Better performance
+LOGIN_URL = '/'
 
 # 🔥 ADDED: Security settings for Railway deployment
 if not DEBUG:
@@ -185,6 +202,10 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+    # Session timeout configuration
+    SESSION_COOKIE_AGE = 3600  # 30 minutes in seconds
+    SESSION_SAVE_EVERY_REQUEST = True  # Reset timer on each request
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Clear session when browser close
 # Logging
 LOGGING = {
     'version': 1,

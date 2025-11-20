@@ -12,6 +12,7 @@
 </head>
 <body>
 
+
 <!-- Admin Top Navigation Bar -->
 <div class="nav_top mb-3">
   <div class="container-fluid">
@@ -22,6 +23,7 @@
         <a href="{% url 'class_management' %}" class="text-decoration-none custom-link">Class Management</a>
       </div>
 
+
       <div class="d-flex align-items-center gap-2 gap-md-3">
         <button id="helpBtn" class="btn btn-outline-info btn-sm" type="button">Need Help?</button>
         <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm logout_btn">Logout</a>
@@ -29,6 +31,7 @@
     </div>
   </div>
 </div>
+
 
 <!-- Help Guide Modal -->
 <div class="modal fade" id="helpGuideModal" tabindex="-1" aria-labelledby="helpGuideLabel" aria-hidden="true">
@@ -39,7 +42,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body d-flex justify-content-center" id="helpSlide">
-        <img id="helpImage" src="{% static 'image/acc_management_inst.png' %}" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
+        <img id="helpImage" src="" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
       </div>
       <div class="modal-footer d-flex justify-content-between">
         <button id="prevHelp" class="btn btn-secondary">Previous</button>
@@ -49,21 +52,86 @@
   </div>
 </div>
 
+
+{% block help_images_script %}
+<!-- Default help images - override in child templates -->
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/acc_management_inst.png' %}",
+        "{% static 'image/acc_management_inst2.png' %}",
+        "{% static 'image/schedule_inst.png' %}"
+    ]
+}
+</script>
+{% endblock %}
+
+
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const helpImage = document.getElementById("helpImage");
     const helpModal = document.getElementById("helpGuideModal");
-    const helpSteps = [
-      "{% static 'image/acc_management_inst.png' %}",
-      "{% static 'image/acc_management_inst2.png' %}",
-      "{% static 'image/schedule_inst.png' %}"
-    ];
+    const prevBtn = document.getElementById("prevHelp");
+    const nextBtn = document.getElementById("nextHelp");
+    
+    // Read help steps from JSON script tag
+    let helpSteps = [];
+    try {
+      const helpDataScript = document.getElementById("help-data");
+      if (helpDataScript) {
+        const helpData = JSON.parse(helpDataScript.textContent);
+        helpSteps = helpData.steps || [];
+      }
+    } catch (e) {
+      console.error("Failed to load help images:", e);
+      // Fallback to default images
+      helpSteps = [
+        "{% static 'image/acc_management_inst.png' %}",
+        "{% static 'image/acc_management_inst2.png' %}",
+        "{% static 'image/schedule_inst.png' %}"
+      ];
+    }
 
     let currentStep = 0;
     let modalInstance = null;
 
     function updateImage() {
-      helpImage.src = helpSteps[currentStep];
+      if (helpSteps.length > 0) {
+        helpImage.src = helpSteps[currentStep];
+      }
+      updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      // Disable and style Previous button if at first image
+      if (currentStep === 0) {
+        prevBtn.disabled = true;
+        prevBtn.classList.remove('btn-secondary');
+        prevBtn.classList.add('btn-light');
+        prevBtn.style.opacity = '0.5';
+        prevBtn.style.cursor = 'not-allowed';
+      } else {
+        prevBtn.disabled = false;
+        prevBtn.classList.remove('btn-light');
+        prevBtn.classList.add('btn-secondary');
+        prevBtn.style.opacity = '1';
+        prevBtn.style.cursor = 'pointer';
+      }
+
+      // Disable and style Next button if at last image
+      if (currentStep === helpSteps.length - 1) {
+        nextBtn.disabled = true;
+        nextBtn.classList.remove('btn-primary');
+        nextBtn.classList.add('btn-light');
+        nextBtn.style.opacity = '0.5';
+        nextBtn.style.cursor = 'not-allowed';
+      } else {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('btn-light');
+        nextBtn.classList.add('btn-primary');
+        nextBtn.style.opacity = '1';
+        nextBtn.style.cursor = 'pointer';
+      }
     }
 
     // Create modal instance only once
@@ -87,14 +155,14 @@
       document.body.style.paddingRight = '';
     }
 
-    document.getElementById("prevHelp").addEventListener("click", function () {
+    prevBtn.addEventListener("click", function () {
       if (currentStep > 0) {
         currentStep--;
         updateImage();
       }
     });
 
-    document.getElementById("nextHelp").addEventListener("click", function () {
+    nextBtn.addEventListener("click", function () {
       if (currentStep < helpSteps.length - 1) {
         currentStep++;
         updateImage();
@@ -102,6 +170,7 @@
     });
 
     document.getElementById("helpBtn").addEventListener("click", function () {
+      updateImage(); // Set initial image and button states before showing modal
       const modal = getModalInstance();
       modal.show();
     });
@@ -126,9 +195,11 @@
   });
 </script>
 
+
 <main>
     {% block content %}{% endblock %}
 </main>
+
 
 <!-- Footer section -->
 <footer class="footer bg-dark text-light py-5">
@@ -141,12 +212,14 @@
         </p>
       </div>
 
+
       <div class="col-md-4 mb-4">
         <h4>Contact Us</h4>
         <p><i class="fa fa-map-marker-alt"></i> Address: CQT Avenue, Salawag, Dasmariñas City, Cavite</p>
         <p><i class="fa fa-phone"></i> Mobile Number: +63 919 616 1221 </p>
         <p><i class="fa fa-envelope"></i> Email: tupcptlt@gmail.com</p>
       </div>
+
 
     </div>
   </div>
@@ -176,13 +249,16 @@
   </div>
 </footer>
 
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   const modalEl = document.getElementById('confirmLogoutModal');
   if (!modalEl) return;
 
+
   const bsModal = new bootstrap.Modal(modalEl, { keyboard: true, backdrop: 'static' });
   let logoutHref = null;
+
 
   document.querySelectorAll('.logout_btn').forEach(btn => {
     btn.addEventListener('click', function (e) {
@@ -191,6 +267,7 @@ document.addEventListener("DOMContentLoaded", function () {
       bsModal.show();
     });
   });
+
 
   const confirmBtn = modalEl.querySelector('#confirmLogoutBtn');
   confirmBtn.addEventListener('click', function () {
@@ -203,7 +280,9 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
 
 </body>
 </html>

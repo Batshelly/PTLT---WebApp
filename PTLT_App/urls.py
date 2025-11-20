@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 
+
 urlpatterns = [
     path('', views.login_view, name='login'),
     path('verify-otp/', views.verify_login_otp, name='verify_login_otp'),
@@ -9,7 +10,7 @@ urlpatterns = [
     path('forgot_password', views.forgot_password, name='forgot_password'),
     path('reset-password/<str:encoded_email>/<str:token>/', views.reset_password, name='reset_password'),
     path('student_attendance_records', views.student_attendance_records, name='student_attendance_records'),
-    path('schedule', views.instructor_schedule, name='schedule'),
+    path('schedule/', views.instructor_schedule, name='instructor_schedule'),  # FIXED: changed name from 'schedule' to 'instructor_schedule'
     path('update-class-schedule_instructor/', views.update_class_schedule_instructor, name='update_class_schedule_instructor'),
     path('account_management/', views.account_management, name='account_management'),
     path('toggle-account-status/<int:account_id>/', views.toggle_account_status, name='toggle_account_status'),
@@ -22,7 +23,6 @@ urlpatterns = [
     path('delete_class_schedule/<int:pk>/', views.delete_class_schedule, name='delete_class_schedule'),
     path('attendance_report_template', views.attendance_report_template, name='attendance_report_template'),
     path('create_instructor', views.create_instructor, name='create_instructor'),
-    path("set_semester", views.set_semester, name="set_semester"), # keep this
     path('auth/mobile/', views.mobile_auth, name='mobile_auth'), 
     path('force-password-change/', views.force_password_change, name='force_password_change'),
     path('import_class_pdf/', views.import_class_from_pdf, name='import_class_pdf'),
@@ -30,4 +30,7 @@ urlpatterns = [
     path('api/mobile-account-sync/', views.mobile_account_sync, name='mobile_account_sync'),
     path('api/attendance_data/', views.get_attendance_data_api, name='get_attendance_data_api'),
     path('attendance/docx/<int:schedule_id>/', views.generate_attendance_docx, name='generate_attendance_docx'),
+    path('clear_attendance/', views.clear_attendance, name='clear_attendance'), #TEMPORARY!
+    path('clear_students/', views.clear_students, name='clear_students'),  #TEMPORARY!
+    path('set_semester/', views.set_semester, name='set_semester'),  # FIXED: removed duplicate
 ]

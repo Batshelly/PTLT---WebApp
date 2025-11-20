@@ -1,6 +1,17 @@
 {% extends "inst_navbar.html" %}
 {% load static %}
 
+{% block help_images_script %}
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/Instructor-StuAttedanceRec-1.PNG' %}",
+        "{% static 'image/Instructor-StuAttedanceRec-2.PNG' %}"
+    ]
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <!-- Custom CSS for this page only -->
 <link rel="stylesheet" href="{% static 'css/schedule.css' %}">
@@ -120,9 +131,70 @@
             font-size: 0.75rem;
         }
     }
+    
+    /* ⭐ FORCE DARK THICK BORDERS ON ALL TABLES ⭐ */
+    #attendance-doc table,
+    #attendance-doc table tr,
+    #attendance-doc table th,
+    #attendance-doc table td {
+        border: 2px solid #000000 !important;
+        border-collapse: collapse !important;
+    }
+    
+    /* Override Bootstrap table borders */
+    .table,
+    .table-bordered {
+        border: 2px solid #000000 !important;
+        border-collapse: collapse !important;
+    }
+    
+    .table-bordered th,
+    .table-bordered td,
+    .table th,
+    .table td {
+        border: 2px solid #000000 !important;
+    }
+    
+    /* Attendance table specific */
+    .attendance-table,
+    .attendance-table th,
+    .attendance-table td {
+        border: 2px solid #000000 !important;
+        text-align: center;
+        vertical-align: middle;
+    }
+    
+    /* Force borders on dynamically generated content */
+    #attendanceTableBody tr,
+    #attendanceTableBody td,
+    #dateHeaderRow th {
+        border: 2px solid #000000 !important;
+    }
+    
+    /* Override Bootstrap's border-dark class */
+    .border-dark {
+        border-color: #000000 !important;
+        border-width: 2px !important;
+    }
+    
+    /* Center Sex column */
+    .attendance-table tbody tr td:nth-child(3) {
+        text-align: center !important;
+    }
+    
+    /* Logo box border */
+    .logo-box {
+        border: 2px solid #000000 !important;
+        width: 120px;
+        height: 120px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
 </style>
 
-<body>
+
+
 <div class="bg-white p-4 mx-auto shadow-sm rounded">
     <div class="container-fluid py-4">
         <!-- TOP ROW -->
@@ -136,10 +208,11 @@
                     <i class="bi bi-download"></i> Download DOCX
                 </button>
                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
-                    <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
+                    <i class="bi bi-file-earmark-spreadsheet p4"></i> Import CSV
                 </button>
             </div>
         </div>
+        
 
         <!-- DROPDOWNS -->
         <div class="d-flex flex-column flex-sm-row justify-content-start align-items-stretch gap-3 mb-3 d-print-none">
@@ -241,33 +314,62 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title">📁 Import Class Schedules</h5>
+                <h5 class="modal-title">📁 Import Attendance from Biometric Device</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong>ℹ️ Important:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Upload the <strong>CSV file exported from your biometric device</strong></li>
+                        <li>Only <strong>existing students</strong> and <strong>existing courses</strong> will be processed</li>
+                        <li>This will create/update <strong>attendance records only</strong></li>
+                        <li><strong>Student IDs must match exactly</strong> (including dashes and format)</li>
+                    </ul>
+                </div>
+
+                
                 <form id="csvUploadForm" enctype="multipart/form-data">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Select CSV File</label>
+                        <label class="form-label fw-bold">Select CSV File from Biometric Device</label>
                         <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
                         <div class="form-text mt-2">
-                            <strong>Required columns:</strong><br>
-                            <code>professor_user_id, course_title, course_code, course_section_id, time_in, time_out, days, grace_period, student_count, remote_device, room_assignment</code>
+                            <strong>Required columns from device:</strong><br>
+                            <code>professor_user_id, course_code, student_id, attendance_date, attendance_time_in, attendance_time_out, attendance_status</code>
                         </div>
                     </div>
-                    <div class="alert alert-info">
-                        <strong>📋 Sample:</strong>
-                        <pre class="mb-0 mt-2">00004,Web Dev,CSIT201,1,09:30,10:20,MWF,15,30,Device1,Room 101</pre>
+                    
+                    <div class="alert alert-success">
+                        <strong>📋 Expected CSV Format (from biometric device):</strong>
+                        <pre class="mb-0 mt-2" style="font-size: 0.75rem;">professor_user_id,course_title,course_code,course_section_id,time_in,time_out,days,grace_period,student_count,remote_device,room_assignment,student_id,first_name,last_name,sex,attendance_date,attendance_time_in,attendance_time_out,attendance_status
+4585,English,BET4,8,21:28,23:20,Fri,0,1,1,-,545,John,Doe,Male,2025-11-07,20:20,20:20,LATE</pre>
+                        <small class="mt-2 d-block"><strong>Date formats:</strong> YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY</small>
+                        <small class="d-block"><strong>Time formats:</strong> HH:MM or HH:MM:SS</small>
+                        <small class="d-block"><strong>Status values:</strong> PRESENT, LATE, ABSENT (case-insensitive)</small>
                     </div>
+                    
                     <button type="submit" class="btn btn-success w-100">
-                        <i class="bi bi-upload"></i> Upload CSV
+                        <i class="bi bi-upload"></i> Upload & Import Attendance
                     </button>
                 </form>
+                
                 <div id="uploadResults" class="mt-3" style="display: none;">
                     <div class="alert">
-                        <h6 class="fw-bold">Results:</h6>
-                        <p class="mb-1"><strong>✅ Imported:</strong> <span id="importedCount">0</span></p>
-                        <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount">0</span></p>
+                        <h6 class="fw-bold" id="resultTitle">Results:</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="mb-1"><strong>✅ Created:</strong> <span id="createdCount">0</span></p>
+                                <p class="mb-1"><strong>🔄 Updated:</strong> <span id="updatedCount">0</span></p>
+                                <p class="mb-1"><strong>⚠️ Skipped:</strong> <span id="skippedCount">0</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="mb-1"><strong>👤 Students not found:</strong> <span id="studentNotFoundCount">0</span></p>
+                                <p class="mb-1"><strong>📚 Courses not found:</strong> <span id="courseNotFoundCount">0</span></p>
+                                <p class="mb-1"><strong>📄 Empty rows:</strong> <span id="emptyRowsCount">0</span></p>
+                            </div>
+                        </div>
+                        <div id="summaryMessage" class="alert alert-secondary mt-2 mb-2" style="display: none;"></div>
                         <div id="errorsList"></div>
                     </div>
                 </div>
@@ -275,6 +377,8 @@
         </div>
     </div>
 </div>
+
+
 
 <script>
 /* --- JS UNCHANGED --- */
@@ -429,7 +533,6 @@ function downloadDocx() {
         return; 
     }
     
-    // Show loading indicator
     const downloadBtn = document.getElementById('downloadBtn');
     const originalHtml = downloadBtn.innerHTML;
     downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Downloading...';
@@ -440,7 +543,6 @@ function downloadDocx() {
         url += `?date_range=${selectedDateRange}`;
     }
     
-    // Use fetch for better control
     fetch(url)
         .then(response => {
             if (!response.ok) throw new Error('Download failed');
@@ -456,7 +558,6 @@ function downloadDocx() {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(downloadUrl);
             
-            // Reset button
             downloadBtn.innerHTML = originalHtml;
             downloadBtn.disabled = false;
         })
@@ -469,20 +570,34 @@ function downloadDocx() {
 }
 
 
-// CSV Upload
+// CSV Upload Handler
 document.getElementById('csvUploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const csvFile = document.getElementById('csvFile').files[0];
-    if (!csvFile) { alert('Select a file'); return; }
+    if (!csvFile) { 
+        alert('Please select a CSV file'); 
+        return; 
+    }
+    
+    // Validate file is CSV
+    if (!csvFile.name.toLowerCase().endsWith('.csv')) {
+        alert('Please upload a CSV file');
+        return;
+    }
     
     const formData = new FormData();
     formData.append('csv_file', csvFile);
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
     
     const resultsDiv = document.getElementById('uploadResults');
+    const submitBtn = this.querySelector('button[type="submit"]');
+    
+    // Show loading state
     resultsDiv.style.display = 'block';
     resultsDiv.querySelector('.alert').className = 'alert alert-info';
-    resultsDiv.querySelector('.alert h6').textContent = '⏳ Uploading...';
+    document.getElementById('resultTitle').textContent = '⏳ Processing CSV...';
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Importing...';
     
     fetch('/import_class_schedule/', {
         method: 'POST',
@@ -492,40 +607,148 @@ document.getElementById('csvUploadForm').addEventListener('submit', function(e) 
     })
     .then(r => r.json())
     .then(data => {
-        document.getElementById('importedCount').textContent = data.imported || 0;
-        document.getElementById('skippedCount').textContent = data.skipped || 0;
+        // Re-enable submit button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-upload"></i> Upload & Import Attendance';
         
+        // Update counts
+        document.getElementById('createdCount').textContent = data.attendance_created || 0;
+        document.getElementById('updatedCount').textContent = data.attendance_updated || 0;
+        document.getElementById('skippedCount').textContent = data.skipped || 0;
+        document.getElementById('studentNotFoundCount').textContent = data.student_not_found || 0;
+        document.getElementById('courseNotFoundCount').textContent = data.course_not_found || 0;
+        document.getElementById('emptyRowsCount').textContent = data.empty_rows || 0;
+        
+        // Show summary message if available
+        const summaryDiv = document.getElementById('summaryMessage');
+        if (data.message) {
+            summaryDiv.textContent = data.message;
+            summaryDiv.style.display = 'block';
+        } else {
+            summaryDiv.style.display = 'none';
+        }
+        
+        // Display errors
         const errorsList = document.getElementById('errorsList');
         errorsList.innerHTML = '';
         if (data.errors && data.errors.length > 0) {
-            errorsList.innerHTML = '<strong class="text-danger">Errors:</strong><ul>';
-            data.errors.forEach(err => { errorsList.innerHTML += `<li>${err}</li>`; });
-            errorsList.innerHTML += '</ul>';
+            errorsList.innerHTML = '<hr><details><summary class="text-danger fw-bold" style="cursor: pointer;">⚠️ View Details (' + data.errors.length + ' issues)</summary><ul class="mt-2">';
+            data.errors.forEach(err => { 
+                errorsList.innerHTML += `<li class="small">${err}</li>`; 
+            });
+            errorsList.innerHTML += '</ul></details>';
         }
         
+        // Update alert styling and title based on results
         const alertDiv = resultsDiv.querySelector('.alert');
+        const totalProcessed = data.imported || 0;
+        
         if (data.status === 'ok') {
             alertDiv.className = 'alert alert-success';
-            resultsDiv.querySelector('.alert h6').textContent = '✅ Success!';
+            document.getElementById('resultTitle').textContent = '✅ Import Successful!';
         } else if (data.status === 'partial') {
             alertDiv.className = 'alert alert-warning';
-            resultsDiv.querySelector('.alert h6').textContent = '⚠️ Partial';
+            document.getElementById('resultTitle').textContent = '⚠️ Partial Import Success';
+        } else if (data.status === 'all_skipped') {
+            alertDiv.className = 'alert alert-warning';
+            document.getElementById('resultTitle').textContent = '⚠️ All Records Skipped';
         } else {
-            alertDiv.className = 'alert alert-danger';
-            resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+            // Failed - check why
+            if (totalProcessed === 0 && data.skipped > 0) {
+                alertDiv.className = 'alert alert-warning';
+                document.getElementById('resultTitle').textContent = '⚠️ No Records Imported';
+            } else {
+                alertDiv.className = 'alert alert-danger';
+                document.getElementById('resultTitle').textContent = '❌ Import Failed';
+            }
         }
         
-        if (data.imported > 0) {
+        // Auto-refresh if any records were imported
+        if (totalProcessed > 0) {
             document.getElementById('csvUploadForm').reset();
-            setTimeout(() => location.reload(), 2000);
+            const successMsg = `Successfully imported ${totalProcessed} attendance record(s)!\n\n` +
+                              `Created: ${data.attendance_created}\n` +
+                              `Updated: ${data.attendance_updated}`;
+            
+            setTimeout(() => {
+                alert(successMsg);
+                location.reload();
+            }, 2000);
         }
     })
     .catch(err => {
         console.error('Error:', err);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-upload"></i> Upload & Import Attendance';
+        
         resultsDiv.querySelector('.alert').className = 'alert alert-danger';
-        resultsDiv.querySelector('.alert h6').textContent = '❌ Failed';
+        document.getElementById('resultTitle').textContent = '❌ Upload Failed';
+        document.getElementById('errorsList').innerHTML = `<p class="text-danger">Network error: ${err.message}</p>`;
     });
 });
+
+// Clear Attendance Function TEMPORARY!
+function clearAttendance() {
+    if (!confirm('⚠️ Are you sure you want to delete ALL attendance records? This cannot be undone!')) {
+        return;
+    }
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    fetch('/clear_attendance/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(`✅ Successfully deleted ${data.count} attendance records!`);
+            location.reload(); // Refresh the page
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        alert('❌ Failed to clear attendance records');
+    });
+}
+
+// Clear Students Function TEMPORARY!
+function clearStudents() {
+    if (!confirm('⚠️ Are you sure you want to delete ALL student accounts? This cannot be undone!')) {
+        return;
+    }
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    fetch('/clear_students/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(`✅ Successfully deleted ${data.count} student accounts!`);
+            location.reload();
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        alert('❌ Failed to clear student accounts');
+    });
+}
+
+
 </script>
-</body>
 {% endblock %}

@@ -9,25 +9,30 @@
     <link rel="icon" type="image/png" href="{% static 'image/ptlt_webapp.png' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 <body>
 
 <!-- Instructor Top Navigation Bar -->
-<div class="d-flex justify-content-between align-items-center mb-3 nav_top">
-    <div class="d-flex align-items-center nav_links">
-        <strong class="pe-3 me-3 fs-5 ptlt">PTLT</strong>
-        <nav class="nav nav-pills gap-4">
-          <a href="{% url 'schedule' %}" class="nav-link text-decoration-none custom-link">Schedule</a>
-          <a href="{% url 'student_attendance_records' %}" class="nav-link text-decoration-none custom-link">Student Attendance Records</a>
-        </nav>
-    </div>
+<div class="nav_top mb-3">
+  <div class="container-fluid">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 py-2">
+      <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center nav_links gap-2 gap-md-0">
+        <strong class="pe-md-3 me-md-3 fs-5 ptlt">PTLT</strong>
+        <a href="{% url 'instructor_schedule' %}" class="text-decoration-none border-md-end pe-md-3 me-md-3 custom-link">My Schedule</a>
+        <a href="{% url 'student_attendance_records' %}" class="text-decoration-none custom-link">Student Attendance Record</a>
 
-    <div class="d-flex align-items-center gap-3 pe-3">
-        <button id="helpBtn" class="btn btn-outline-info" type="button">Need Help?</button>
-        <a href="{% url 'logout' %}" class="btn btn-outline-danger logout_btn">Logout</a>
+      </div>
+
+      <div class="d-flex align-items-center gap-2 gap-md-3">
+        <button id="helpBtn" class="btn btn-outline-info btn-sm" type="button">Need Help?</button>
+        <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm logout_btn">Logout</a>
+      </div>
     </div>
+  </div>
 </div>
 
+<!-- Help Guide Modal -->
 <div class="modal fade" id="helpGuideModal" tabindex="-1" aria-labelledby="helpGuideLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content shadow">
@@ -36,7 +41,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body d-flex justify-content-center" id="helpSlide">
-        <img id="helpImage" src="{% static 'image/attendance_records_inst.png' %}" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
+        <img id="helpImage" src="" alt="Help Guide Step" class="img-fluid rounded shadow" style="max-height: 75vh;" />
       </div>
       <div class="modal-footer d-flex justify-content-between">
         <button id="prevHelp" class="btn btn-secondary">Previous</button>
@@ -46,20 +51,82 @@
   </div>
 </div>
 
+{% block help_images_script %}
+<!-- Default help images - override in child templates -->
+<script id="help-data" type="application/json">
+{
+    "steps": [
+        "{% static 'image/Instructor-Schedule-1.PNG' %}",
+        "{% static 'image/Instructor-Schedule-2.PNG' %}"
+    ]
+}
+</script>
+{% endblock %}
+
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const helpImage = document.getElementById("helpImage");
     const helpModal = document.getElementById("helpGuideModal");
-    const helpSteps = [
-      "{% static 'image/attendance_records_inst.png' %}",
-      "{% static 'image/schedule_inst.png' %}"
-    ];
+    const prevBtn = document.getElementById("prevHelp");
+    const nextBtn = document.getElementById("nextHelp");
+    
+    // Read help steps from JSON script tag
+    let helpSteps = [];
+    try {
+      const helpDataScript = document.getElementById("help-data");
+      if (helpDataScript) {
+        const helpData = JSON.parse(helpDataScript.textContent);
+        helpSteps = helpData.steps || [];
+      }
+    } catch (e) {
+      console.error("Failed to load help images:", e);
+      // Fallback to default images
+      helpSteps = [
+        "{% static 'image/Instructor-Schedule-1.PNG' %}",
+        "{% static 'image/Instructor-Schedule-2.PNG' %}"
+      ];
+    }
 
     let currentStep = 0;
     let modalInstance = null;
 
     function updateImage() {
-      helpImage.src = helpSteps[currentStep];
+      if (helpSteps.length > 0) {
+        helpImage.src = helpSteps[currentStep];
+      }
+      updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      // Disable and style Previous button if at first image
+      if (currentStep === 0) {
+        prevBtn.disabled = true;
+        prevBtn.classList.remove('btn-secondary');
+        prevBtn.classList.add('btn-light');
+        prevBtn.style.opacity = '0.5';
+        prevBtn.style.cursor = 'not-allowed';
+      } else {
+        prevBtn.disabled = false;
+        prevBtn.classList.remove('btn-light');
+        prevBtn.classList.add('btn-secondary');
+        prevBtn.style.opacity = '1';
+        prevBtn.style.cursor = 'pointer';
+      }
+
+      // Disable and style Next button if at last image
+      if (currentStep === helpSteps.length - 1) {
+        nextBtn.disabled = true;
+        nextBtn.classList.remove('btn-primary');
+        nextBtn.classList.add('btn-light');
+        nextBtn.style.opacity = '0.5';
+        nextBtn.style.cursor = 'not-allowed';
+      } else {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('btn-light');
+        nextBtn.classList.add('btn-primary');
+        nextBtn.style.opacity = '1';
+        nextBtn.style.cursor = 'pointer';
+      }
     }
 
     // Create modal instance only once
@@ -75,24 +142,22 @@
 
     // Clean up function to ensure backdrop is removed
     function cleanupModal() {
-      // Remove any lingering backdrops
       const backdrops = document.querySelectorAll('.modal-backdrop');
       backdrops.forEach(backdrop => backdrop.remove());
       
-      // Restore body scroll
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
     }
 
-    document.getElementById("prevHelp").addEventListener("click", function () {
+    prevBtn.addEventListener("click", function () {
       if (currentStep > 0) {
         currentStep--;
         updateImage();
       }
     });
 
-    document.getElementById("nextHelp").addEventListener("click", function () {
+    nextBtn.addEventListener("click", function () {
       if (currentStep < helpSteps.length - 1) {
         currentStep++;
         updateImage();
@@ -100,6 +165,7 @@
     });
 
     document.getElementById("helpBtn").addEventListener("click", function () {
+      updateImage(); // Set initial image and button states before showing modal
       const modal = getModalInstance();
       modal.show();
     });
@@ -107,16 +173,15 @@
     // Add event listeners for modal close events
     helpModal.addEventListener('hidden.bs.modal', function () {
       cleanupModal();
-      currentStep = 0; // Reset to first step
+      currentStep = 0;
       updateImage();
     });
 
-    // Additional safety cleanup for the close button
     helpModal.addEventListener('hide.bs.modal', function () {
-      setTimeout(cleanupModal, 100); // Small delay to ensure Bootstrap finishes
+      setTimeout(cleanupModal, 100);
     });
 
-    // Force cleanup on ESC key or backdrop click
+    // Force cleanup on ESC key
     document.addEventListener('keydown', function(event) {
       if (event.key === 'Escape' && helpModal.classList.contains('show')) {
         cleanupModal();
@@ -146,7 +211,6 @@
         <p><i class="fa fa-phone"></i> Mobile Number: +63 919 616 1221 </p>
         <p><i class="fa fa-envelope"></i> Email: tupcptlt@gmail.com</p>
       </div>
-
     </div>
   </div>
   <div class="footer-bottom text-center mt-4">
@@ -177,23 +241,20 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  // Find modal element
   const modalEl = document.getElementById('confirmLogoutModal');
-  if (!modalEl) return; // nothing to do if modal missing
+  if (!modalEl) return;
 
   const bsModal = new bootstrap.Modal(modalEl, { keyboard: true, backdrop: 'static' });
   let logoutHref = null;
 
-  // Attach click handler to any logout buttons/links
   document.querySelectorAll('.logout_btn').forEach(btn => {
     btn.addEventListener('click', function (e) {
-      e.preventDefault(); // stop immediate navigation
-      logoutHref = btn.getAttribute('href'); // remember where to go
+      e.preventDefault();
+      logoutHref = btn.getAttribute('href');
       bsModal.show();
     });
   });
 
-  // Confirm button on modal — perform the redirect
   const confirmBtn = modalEl.querySelector('#confirmLogoutBtn');
   confirmBtn.addEventListener('click', function () {
     if (logoutHref) {
@@ -206,5 +267,6 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
 </body>
 </html>

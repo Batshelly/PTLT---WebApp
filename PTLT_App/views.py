@@ -24,6 +24,8 @@ from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
+from django.db import IntegrityError
+from django.contrib.auth import login as auth_login
 import datetime
 import csv
 import io
@@ -80,18 +82,28 @@ import random
 from datetime import datetime, timedelta, date
 from .models import Account, CourseSection, ClassSchedule
 
-# Custom authentication decorators
 def admin_required(view_func):
+    """Decorator for admin-only views - handles both AJAX and regular requests"""
     @wraps(view_func)
     @login_required
     def wrapper(request, *args, **kwargs):
         try:
-            account = Account.objects.get(email=request.user.email, role='Admin')
+            account = Account.objects.get(email=request.user.email, role="Admin")
         except Account.DoesNotExist:
-            messages.error(request, "Access denied: Admin privileges required.")
-            return redirect('login')
+            # Check if it's an AJAX request
+            if request.headers.get('Content-Type') == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Access denied: Admin privileges required.'
+                }, status=403)
+            else:
+                messages.error(request, "Access denied: Admin privileges required.")
+                return redirect('login')
+        
+        # ⚠️ CRITICAL: Must return the view function's response
         return view_func(request, *args, **kwargs)
     return wrapper
+
 
 def instructor_or_admin_required(view_func):
     @wraps(view_func)
@@ -131,6 +143,18 @@ PERIODS = [
 
 @transaction.atomic 
 def login_view(request):
+    
+    # 🔥 NEW: Clear all messages when session expires
+    session_expired = request.GET.get('session_expired', False)
+    if session_expired:
+        # Clear all existing messages
+        from django.contrib.messages import get_messages
+        storage = get_messages(request)
+        storage.used = True  # Mark all messages as used to clear them
+        
+        # Add the session expired message
+        messages.warning(request, 'Your session has expired. Please log in again.')
+        
     # Check if any semester ended and not archived yet
     today = timezone.now().date()
     semester_to_archive = Semester.objects.filter(end_date__lt=today, is_archived=False).first()
@@ -286,9 +310,11 @@ def login_view(request):
         
     return render(request, 'login.html')
 
-
-# NEW VIEW: OTP Verification for Login
 def verify_login_otp(request):
+    """
+    Verify OTP and authenticate user.
+    Handles dual Account/User table architecture safely.
+    """
     # Check if user came from login page with OTP
     if 'login_otp' not in request.session or 'login_email' not in request.session:
         messages.error(request, "Session expired. Please request a new OTP.")
@@ -301,74 +327,117 @@ def verify_login_otp(request):
         otp_timestamp = request.session.get('otp_timestamp')
         
         # Check OTP expiration (5 minutes)
-        otp_time = datetime.fromisoformat(otp_timestamp)
-        current_time = datetime.now()
-        time_diff = (current_time - otp_time).total_seconds() / 60
-        
-        if time_diff > 5:
-            # OTP expired
-            del request.session['login_otp']
-            del request.session['login_email']
-            del request.session['otp_timestamp']
-            messages.error(request, "OTP has expired. Please request a new one.")
-            return redirect('login')
-        
-        # Validate OTP
-        if str(stored_otp) == user_otp:
-            try:
-                # Get the account
-                account = Account.objects.get(email=email)
-                
-                # Get or create Django User for session
-                try:
-                    user_obj = User.objects.get(email=email)
-                except User.DoesNotExist:
-                    # Create Django User if doesn't exist
-                    user_obj = User.objects.create_user(
-                        username=account.user_id,
-                        email=account.email,
-                        password=get_random_string(12),
-                        first_name=account.first_name,
-                        last_name=account.last_name
-                    )
-                
-                # Log the user in (backend bypasses password check)
-                from django.contrib.auth import login as auth_login
-                auth_login(request, user_obj, backend='django.contrib.auth.backends.ModelBackend')
-                
-                # Set session variables
-                request.session['user_id'] = account.user_id
-                request.session['role'] = account.role
-                
-                # Clear OTP data from session
+        try:
+            otp_time = datetime.fromisoformat(otp_timestamp)
+            current_time = datetime.now()
+            time_diff = (current_time - otp_time).total_seconds() / 60
+            
+            if time_diff > 5:
+                # OTP expired - clear session
                 del request.session['login_otp']
                 del request.session['login_email']
                 del request.session['otp_timestamp']
-                
-                messages.success(request, f"Welcome back, {account.first_name}!")
-                
-                # Redirect based on role
-                if account.role == 'Admin':
-                    return redirect('account_management')
-                elif account.role == 'Instructor':
-                    return redirect('schedule')
-                else:
-                    messages.error(request, "Unknown user role.")
-                    return redirect('login')
-                    
-            except Account.DoesNotExist:
-                messages.error(request, "Account not found.")
+                messages.error(request, "OTP has expired. Please request a new one.")
                 return redirect('login')
-        else:
-            # Invalid OTP - but don't clear session, allow retry
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid session data. Please try again.")
+            return redirect('login')
+        
+        # Validate OTP
+        if str(stored_otp) != user_otp:
+            # Invalid OTP - don't clear session, allow retry
             messages.error(request, "Invalid OTP. Please try again.")
             return render(request, 'verify_login_otp.html', {'email': email})
+        
+        # OTP is valid - proceed with authentication
+        try:
+            # 1. Get the Account record by email
+            account = Account.objects.get(email=email)
+            
+            # 2. Check account status
+            if account.status != 'Active':
+                messages.error(request, f"Your account is {account.status}. Please contact admin.")
+                return redirect('login')
+            
+            # 3. Get or create Django User (synchronized to Account)
+            try:
+                # Try to get existing User by username (which maps to account.user_id)
+                user_obj = User.objects.get(username=account.user_id)
+                
+                # Update User fields to match Account (in case email changed)
+                needs_update = False
+                if user_obj.email != account.email:
+                    user_obj.email = account.email
+                    needs_update = True
+                if user_obj.first_name != account.first_name:
+                    user_obj.first_name = account.first_name
+                    needs_update = True
+                if user_obj.last_name != account.last_name:
+                    user_obj.last_name = account.last_name
+                    needs_update = True
+                
+                if needs_update:
+                    user_obj.save()
+                    
+            except User.DoesNotExist:
+                # User doesn't exist - create it
+                try:
+                    user_obj = User.objects.create_user(
+                        username=account.user_id,
+                        email=account.email,
+                        password=get_random_string(12),  # Random password (not used for login)
+                        first_name=account.first_name,
+                        last_name=account.last_name
+                    )
+                except IntegrityError as e:
+                    # Handle duplicate username gracefully
+                    if 'username' in str(e).lower() or 'duplicate' in str(e).lower():
+                        messages.error(request, "Account synchronization error. Please contact admin.")
+                    else:
+                        messages.error(request, "Authentication failed. Please try again.")
+                    return redirect('login')
+            
+            # 4. Log the user in (backend bypasses password check)
+            auth_login(request, user_obj, backend='django.contrib.auth.backends.ModelBackend')
+            
+            # 5. Set session variables
+            request.session['user_id'] = account.user_id
+            request.session['role'] = account.role
+            
+            # 6. Clear OTP data from session
+            del request.session['login_otp']
+            del request.session['login_email']
+            del request.session['otp_timestamp']
+            
+            messages.success(request, f"Welcome back, {account.first_name}!")
+            
+            # 7. Redirect based on role
+            if account.role == 'Admin':
+                return redirect('account_management')
+            elif account.role == 'Instructor':
+                return redirect('instructor_schedule')
+            elif account.role == 'Student':
+                return redirect('student_dashboard')  # Adjust to your actual student URL
+            else:
+                messages.error(request, "Unknown user role.")
+                return redirect('login')
+                
+        except Account.DoesNotExist:
+            messages.error(request, "Account not found. Please check your email or contact admin.")
+            return redirect('login')
+        
+        except Exception as e:
+            # Catch any unexpected errors
+            messages.error(request, "An unexpected error occurred. Please try again.")
+            # Log the error for debugging (optional)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Login error for {email}: {str(e)}")
+            return redirect('login')
     
     # GET request - show OTP entry form
     email = request.session.get('login_email')
     return render(request, 'verify_login_otp.html', {'email': email})
-
-
 # NEW VIEW: Resend OTP
 def resend_login_otp(request):
     if 'login_email' not in request.session:
@@ -484,7 +553,7 @@ def force_password_change(request):
                 if account.role == 'Admin':
                     return redirect('account_management')
                 elif account.role == 'Instructor':
-                    return redirect('schedule')
+                    return redirect('instructor_schedule')
                 else:
                     return redirect('login')
             
@@ -1067,22 +1136,16 @@ import csv
 import io
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import Account, ClassSchedule, CourseSection
+from django.views.decorators.http import require_http_methods
+from .models import Account, ClassSchedule, CourseSection, AttendanceRecord
+from datetime import datetime
 
-# import csv🔥
 @csrf_exempt
 @instructor_or_admin_required
+@require_http_methods(["POST"])
 def import_class_schedule(request):
-    """Import class schedules, students, AND attendance records from CSV"""
-    if request.method != 'POST':
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Only POST method allowed',
-            'imported': 0,
-            'skipped': 0,
-            'errors': ['Only POST method allowed']
-        }, status=405)
-
+    """Import attendance records from biometric CSV export - EXACT MATCH ONLY"""
+    
     if 'csv_file' not in request.FILES:
         return JsonResponse({
             'status': 'error',
@@ -1091,7 +1154,7 @@ def import_class_schedule(request):
             'skipped': 0,
             'errors': ['No CSV file found']
         }, status=400)
-
+    
     try:
         csv_file = request.FILES['csv_file']
         decoded_file = csv_file.read().decode('utf-8')
@@ -1099,213 +1162,195 @@ def import_class_schedule(request):
         reader = csv.DictReader(io_string)
         
         results = {
-            'imported': 0,
+            'attendance_created': 0,
+            'attendance_updated': 0,
             'skipped': 0,
-            'errors': [],
-            'students_created': 0,
-            'students_linked': 0,
-            'attendance_created': 0  # ✅ NEW
+            'student_not_found': 0,
+            'course_not_found': 0,
+            'empty_rows': 0,
+            'errors': []
         }
-        
-        processed_schedules = set()
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # Class schedule fields
-                professor_user_id = row.get('professor_user_id', '').strip()
+                # ✨ EXTRACT FIELDS FROM YOUR CSV FORMAT
                 course_code = row.get('course_code', '').strip()
-                course_title = row.get('course_title', '').strip()
-                course_section_id = row.get('course_section_id', '').strip()
-                time_in_str = row.get('time_in', '').strip()
-                time_out_str = row.get('time_out', '').strip()
-                days = row.get('days', '').strip()
-                grace_period = row.get('grace_period', '15').strip()
-                student_count = row.get('student_count', '0').strip()
-                remote_device = row.get('remote_device', '').strip()
-                room_assignment = row.get('room_assignment', '').strip()
-                
-                # Student fields
                 student_id = row.get('student_id', '').strip()
-                first_name = row.get('first_name', '').strip()
-                last_name = row.get('last_name', '').strip()
-                sex = row.get('sex', '').strip()
-                
-                # ✅ NEW: Attendance fields (optional)
                 attendance_date_str = row.get('attendance_date', '').strip()
                 attendance_time_in_str = row.get('attendance_time_in', '').strip()
                 attendance_time_out_str = row.get('attendance_time_out', '').strip()
-                attendance_status = row.get('attendance_status', 'Present').strip()
+                attendance_status = row.get('attendance_status', 'Present').strip().title()
                 
-                # Validate required schedule fields
-                if not all([course_code, course_section_id, time_in_str, time_out_str]):
-                    results['errors'].append(f'Line {line_num}: Missing required fields')
+                # ✨ SKIP COMPLETELY EMPTY ROWS
+                if not any([course_code, student_id, attendance_date_str, attendance_time_in_str]):
+                    results['empty_rows'] += 1
+                    continue
+                
+                # ✨ VALIDATE REQUIRED FIELDS
+                if not all([course_code, student_id, attendance_date_str, attendance_time_in_str]):
+                    missing_fields = []
+                    if not course_code: missing_fields.append('course_code')
+                    if not student_id: missing_fields.append('student_id')
+                    if not attendance_date_str: missing_fields.append('attendance_date')
+                    if not attendance_time_in_str: missing_fields.append('attendance_time_in')
+                    
+                    results['errors'].append(f"Line {line_num}: Missing fields: {', '.join(missing_fields)}")
                     results['skipped'] += 1
                     continue
                 
-                # Parse schedule times
+                # ✨ STEP 1: VERIFY COURSE CODE EXISTS
                 try:
-                    from datetime import datetime
-                    time_in = datetime.strptime(time_in_str, '%H:%M').time()
-                    time_out = datetime.strptime(time_out_str, '%H:%M').time()
-                except ValueError:
-                    results['errors'].append(f'Line {line_num}: Invalid time format')
+                    class_schedule = ClassSchedule.objects.get(course_code=course_code)
+                except ClassSchedule.DoesNotExist:
+                    results['course_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Course '{course_code}' not found")
                     results['skipped'] += 1
                     continue
                 
-                # Get professor
-                professor = None
-                if professor_user_id:
-                    try:
-                        professor = Account.objects.get(user_id=professor_user_id, role='Instructor')
-                    except Account.DoesNotExist:
-                        results['errors'].append(f'Line {line_num}: Professor {professor_user_id} not found')
-                
-                # Get CourseSection
+                # ✨ STEP 2: VERIFY STUDENT EXISTS (EXACT MATCH ONLY - NO FLEXIBLE MATCHING)
                 try:
-                    course_section = CourseSection.objects.get(id=int(course_section_id))
-                except (CourseSection.DoesNotExist, ValueError):
-                    results['errors'].append(f'Line {line_num}: CourseSection ID {course_section_id} not found')
+                    student = Account.objects.get(user_id=student_id, role='Student')
+                except Account.DoesNotExist:
+                    results['student_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found (exact match required)")
+                    results['skipped'] += 1
+                    continue
+                except Account.MultipleObjectsReturned:
+                    results['student_not_found'] += 1
+                    results['errors'].append(f"Line {line_num}: Multiple students found with ID '{student_id}'")
                     results['skipped'] += 1
                     continue
                 
-                # Create or update ClassSchedule
-                schedule_key = f"{course_code}_{course_section_id}"
-                
-                if schedule_key not in processed_schedules:
-                    class_schedule, created = ClassSchedule.objects.update_or_create(
-                        course_code=course_code,
-                        course_section=course_section,
-                        defaults={
-                            'course_title': course_title or course_code,
-                            'professor': professor,
-                            'time_in': time_in,
-                            'time_out': time_out,
-                            'days': days,
-                            'grace_period': int(grace_period) if grace_period.isdigit() else 15,
-                            'student_count': int(student_count) if student_count.isdigit() else 0,
-                            'remote_device': remote_device,
-                            'room_assignment': room_assignment,
-                        }
-                    )
-                    results['imported'] += 1
-                    processed_schedules.add(schedule_key)
-                else:
-                    # Get existing schedule
-                    class_schedule = ClassSchedule.objects.get(
-                        course_code=course_code,
-                        course_section=course_section
-                    )
-                
-                # Create student account
-                if student_id and first_name and last_name:
-                    try:
-                        sex_value = 'Male' if sex.upper() == 'M' else 'Female' if sex.upper() == 'F' else 'Other'
-                        
-                        student_account, student_created = Account.objects.get_or_create(
-                            user_id=student_id,
-                            defaults={
-                                'first_name': first_name,
-                                'last_name': last_name,
-                                'role': 'Student',
-                                'email': '',
-                                'password': None,  # NO PASSWORD
-                                'sex': sex_value,
-                                'status': 'Inactive',
-                                'course_section': course_section
-                            }
-                        )
-                        
-                        if student_created:
-                            results['students_created'] += 1
-                        else:
-                            if student_account.course_section != course_section:
-                                student_account.course_section = course_section
-                                student_account.save()
-                                results['students_linked'] += 1
-                        
-                        # ✅ NEW: Create attendance record if date/time provided
-                        if attendance_date_str and attendance_time_in_str:
+                # ✨ STEP 3: PARSE DATE & TIMES (FLEXIBLE FORMATS)
+                try:
+                    # Parse date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
+                    attendance_date = None
+                    for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']:
+                        try:
+                            attendance_date = datetime.strptime(attendance_date_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if not attendance_date:
+                        raise ValueError(f"Date '{attendance_date_str}' must be YYYY-MM-DD, DD/MM/YYYY, or MM/DD/YYYY")
+                    
+                    # Parse time_in (supports H:M and H:M:S)
+                    attendance_time_in = None
+                    for time_format in ['%H:%M:%S', '%H:%M']:
+                        try:
+                            attendance_time_in = datetime.strptime(attendance_time_in_str, time_format).time()
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if not attendance_time_in:
+                        raise ValueError(f"Time '{attendance_time_in_str}' must be HH:MM or HH:MM:SS")
+                    
+                    # Parse time_out (optional)
+                    attendance_time_out = None
+                    if attendance_time_out_str:
+                        for time_format in ['%H:%M:%S', '%H:%M']:
                             try:
-                                attendance_date = datetime.strptime(attendance_date_str, '%Y-%m-%d').date()
-                                attendance_time_in = datetime.strptime(attendance_time_in_str, '%H:%M').time()
-                                attendance_time_out = None
-                                
-                                if attendance_time_out_str:
-                                    attendance_time_out = datetime.strptime(attendance_time_out_str, '%H:%M').time()
-                                
-                                # Create or update attendance record
-                                AttendanceRecord.objects.update_or_create(
-                                    class_schedule=class_schedule,
-                                    student=student_account,
-                                    date=attendance_date,
-                                    defaults={
-                                        'professor': professor or class_schedule.professor,
-                                        'course_section': course_section,
-                                        'time_in': attendance_time_in,
-                                        'time_out': attendance_time_out,
-                                        'status': attendance_status,
-                                        'fingerprint_data': b''  # Empty for CSV
-                                    }
-                                )
-                                results['attendance_created'] += 1
-                                
-                            except ValueError as e:
-                                results['errors'].append(f'Line {line_num}: Invalid attendance date/time - {str(e)}')
-                            
-                    except Exception as e:
-                        results['errors'].append(f'Line {line_num}: Error with student {student_id}: {str(e)}')
+                                attendance_time_out = datetime.strptime(attendance_time_out_str, time_format).time()
+                                break
+                            except ValueError:
+                                continue
+                    
+                except ValueError as e:
+                    results['errors'].append(f"Line {line_num}: Invalid date/time - {str(e)}")
+                    results['skipped'] += 1
+                    continue
+                
+                # ✨ STEP 4: NORMALIZE STATUS
+                status_map = {
+                    'LATE': 'Late',
+                    'PRESENT': 'Present',
+                    'ABSENT': 'Absent',
+                    'Late': 'Late',
+                    'Present': 'Present',
+                    'Absent': 'Absent'
+                }
+                normalized_status = status_map.get(attendance_status, 'Present')
+                
+                # ✨ STEP 5: CREATE OR UPDATE ATTENDANCE RECORD
+                attendance_record, created = AttendanceRecord.objects.update_or_create(
+                    class_schedule=class_schedule,
+                    student=student,
+                    date=attendance_date,
+                    defaults={
+                        'professor': class_schedule.professor,
+                        'course_section': class_schedule.course_section,
+                        'time_in': attendance_time_in,
+                        'time_out': attendance_time_out,
+                        'status': normalized_status,
+                        'fingerprint_data': b'',
+                    }
+                )
+                
+                if created:
+                    results['attendance_created'] += 1
+                else:
+                    results['attendance_updated'] += 1
                 
             except Exception as e:
-                results['errors'].append(f'Line {line_num}: {str(e)}')
+                results['errors'].append(f"Line {line_num}: {str(e)}")
                 results['skipped'] += 1
         
-        # Update student counts
-        for schedule_key in processed_schedules:
-            course_code, section_id = schedule_key.split('_')
-            try:
-                course_section = CourseSection.objects.get(id=int(section_id))
-                class_schedule = ClassSchedule.objects.get(
-                    course_code=course_code,
-                    course_section=course_section
-                )
-                actual_count = Account.objects.filter(
-                    course_section=course_section,
-                    role='Student'
-                ).count()
-                class_schedule.student_count = actual_count
-                class_schedule.save()
-            except Exception as e:
-                print(f"Error updating student count: {str(e)}")
+        # ✨ DETERMINE STATUS
+        total_processed = results['attendance_created'] + results['attendance_updated']
         
-        status_code = 'ok' if results['imported'] > 0 else 'failed'
+        if total_processed == 0:
+            if results['skipped'] > 0:
+                status_code = 'all_skipped'
+            else:
+                status_code = 'failed'
+        elif results['skipped'] == 0:
+            status_code = 'ok'
+        else:
+            status_code = 'partial'
+        
+        # ✨ BUILD SUMMARY MESSAGE
+        message_parts = []
+        if results['student_not_found'] > 0:
+            message_parts.append(f"{results['student_not_found']} students not found")
+        if results['course_not_found'] > 0:
+            message_parts.append(f"{results['course_not_found']} courses not found")
+        if results['empty_rows'] > 0:
+            message_parts.append(f"{results['empty_rows']} empty rows skipped")
+        
+        summary_message = '; '.join(message_parts) if message_parts else 'All records processed successfully'
+        
+        print(f"✅ Import completed: {total_processed} records processed, {results['skipped']} skipped")
         
         return JsonResponse({
             'status': status_code,
-            'imported': results['imported'],
-            'students_created': results['students_created'],
-            'students_linked': results['students_linked'],
-            'attendance_created': results['attendance_created'],  # ✅ NEW
+            'imported': total_processed,
+            'attendance_created': results['attendance_created'],
+            'attendance_updated': results['attendance_updated'],
             'skipped': results['skipped'],
-            'errors': results['errors'][:10]
+            'student_not_found': results['student_not_found'],
+            'course_not_found': results['course_not_found'],
+            'empty_rows': results['empty_rows'],
+            'message': summary_message,
+            'errors': results['errors'][:20]
         })
         
     except Exception as e:
+        print(f"❌ Error in import: {str(e)}")
         import traceback
         traceback.print_exc()
+        
         return JsonResponse({
             'status': 'error',
             'message': str(e),
             'imported': 0,
             'skipped': 0,
-            'errors': [f"Server error: {str(e)}"]
+            'errors': [f'Server error: {str(e)}']
         }, status=500)
-
-
-
-#try pdf import
-
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
+    """Import class schedule from PDF with duplicate detection and Unicode support"""
     if 'pdf_file' not in request.FILES:
         return JsonResponse({'status': 'error', 'message': 'No PDF file provided'}, status=400)
     
@@ -1320,111 +1365,191 @@ def import_class_from_pdf(request):
         for page in pdf_reader.pages:
             full_text += page.extract_text() + "\n"
         
+        # Clean up text - remove page breaks and normalize spacing
+        full_text = re.sub(r'Page \d+ / \d+', '', full_text)
+        full_text = re.sub(r'Page \d+ \d+', '', full_text)
+        full_text = re.sub(r'\n{3,}', '\n\n', full_text)
+        
         # Initialize data containers
         schedule_data = {}
         all_students = []
         
-        # Extract Schedule ID
-        schedule_id_match = re.search(r'Schedule ID\s*:\s*([A-Z0-9]+)', full_text)
+        # ========== SCHEDULE ID EXTRACTION ==========
+        schedule_id_match = re.search(r'Schedule\s*ID\s*:\s*([A-Z0-9]+)', full_text, re.IGNORECASE)
         if schedule_id_match:
             schedule_data['schedule_id'] = schedule_id_match.group(1).strip()
         
-        # Extract Subject (Course Code - Course Title)
-        subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s*Venue|\n)', full_text)
+        # ========== SUBJECT EXTRACTION ==========
+        subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)\s+Venue', full_text, re.DOTALL)
+        
+        if not subject_match:
+            subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s+Course/Section|\n)', full_text, re.DOTALL)
+        
+        if not subject_match:
+            subject_match = re.search(r'Subject\s*:\s*([A-Z0-9-]+)\s*-\s*(.+?)(?:\s{2,}|\n)', full_text)
+        
         if subject_match:
             schedule_data['course_code'] = subject_match.group(1).strip()
-            schedule_data['course_title'] = subject_match.group(2).strip()
+            schedule_data['course_title'] = ' '.join(subject_match.group(2).strip().split())
         
-        # Extract Day/Time
-        day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU])\s+(\d{1,2}:\d{2}[AP]M)-(\d{1,2}:\d{2}[AP]M)', full_text)
+        # ========== DAY/TIME EXTRACTION ==========
+        day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU])\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
+        if not day_time_match:
+            day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU]+)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
+        if not day_time_match:
+            day_time_match = re.search(r'Day/Time\s*:\s*([MTWRFSU/]+)\s+(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', full_text)
+        
         if day_time_match:
             day_map = {
                 'M': 'Monday', 'T': 'Tuesday', 'W': 'Wednesday',
                 'R': 'Thursday', 'F': 'Friday', 'S': 'Saturday', 'U': 'Sunday'
             }
-            schedule_data['day'] = day_map.get(day_time_match.group(1), 'Monday')
             
-            time_in_str = day_time_match.group(2)
-            time_out_str = day_time_match.group(3)
+            day_str = day_time_match.group(1).replace('/', '')
+            if len(day_str) == 1:
+                schedule_data['day'] = day_map.get(day_str, 'Monday')
+            else:
+                days = [day_map.get(d, d) for d in day_str if d in day_map]
+                schedule_data['day'] = '/'.join(days)
             
-            schedule_data['time_in'] = datetime.strptime(time_in_str, '%I:%M%p').time()
-            schedule_data['time_out'] = datetime.strptime(time_out_str, '%I:%M%p').time()
+            time_in_str = day_time_match.group(2).replace(' ', '')
+            time_out_str = day_time_match.group(3).replace(' ', '')
+            
+            try:
+                schedule_data['time_in'] = datetime.strptime(time_in_str, '%I:%M%p').time()
+                schedule_data['time_out'] = datetime.strptime(time_out_str, '%I:%M%p').time()
+            except ValueError:
+                schedule_data['time_in'] = datetime.strptime(time_in_str.replace(' ', ''), '%I:%M%p').time()
+                schedule_data['time_out'] = datetime.strptime(time_out_str.replace(' ', ''), '%I:%M%p').time()
         
-        # Extract Course/Section
-        section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s*\n|1st Semester)', full_text)
+        # ========== COURSE/SECTION EXTRACTION ==========
+        section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s*\n|1st Semester|2nd Semester|Summer)', full_text)
+        
+        if not section_match:
+            section_match = re.search(r'Course/Section\s*:\s*(.+?)(?:\s+Student No\.|\n)', full_text)
+        
         if section_match:
             section_str = section_match.group(1).strip()
-            # Handle format like "BET-COET-C-BET-COET-C-4A-C"
             parts = section_str.split('-')
-            if len(parts) >= 3:
-                # Extract course and section
-                # For "BET-COET-C-BET-COET-C-4A-C", we want "BET-COET-C" and "4A-C"
+            
+            if len(parts) >= 6:
                 mid_point = len(parts) // 2
                 schedule_data['course_name'] = '-'.join(parts[:mid_point])
                 schedule_data['section_name'] = '-'.join(parts[-2:])
+            elif len(parts) >= 3:
+                mid_point = len(parts) // 2
+                schedule_data['course_name'] = '-'.join(parts[:mid_point])
+                schedule_data['section_name'] = '-'.join(parts[mid_point:])
+            elif len(parts) == 2:
+                schedule_data['course_name'] = parts[0]
+                schedule_data['section_name'] = parts[1]
+            else:
+                schedule_data['course_name'] = section_str
+                schedule_data['section_name'] = 'A'
         
-        # Extract student information
-        # Pattern: number. TUPC-XX-XXXX LASTNAME, FIRSTNAME MIDDLENAME
-        student_pattern = r'\d+\.\s*(TUPC-\d{2}-\d{4})\s+([A-Z\s,]+?)(?:\s+BET-COET|$)'
-        student_matches = re.finditer(student_pattern, full_text)
+        # ========== STUDENT EXTRACTION (ULTRA PERMISSIVE) ==========
+        # Match anything that looks like: number + TUPC-ID + name + course code
+        # Using .+? (any character) instead of specific character classes
+        student_pattern = r'(\d+)\.+\s*(TUPC-\d{2}-\d{4})\s+(.+?)\s+([A-Z]{3,}[A-Z-]*)\s*(?:\n|$|Remarks|Page)'
+        student_matches = list(re.finditer(student_pattern, full_text, re.DOTALL | re.UNICODE))
+        
+        print(f"DEBUG: Found {len(student_matches)} student matches")
 
         for match in student_matches:
-            student_no = match.group(1).strip()
-            name = match.group(2).strip()
-            
-            # Extract ID (TUPC-22-0352 → 220352)
-            id_match = re.match(r'TUPC-(\d{2})-(\d{4})', student_no)
-            if not id_match:
-                continue
-            
-            short_id = id_match.group(1) + id_match.group(2)  # e.g., "220352"
-            
-            # Parse name (LASTNAME, FIRSTNAME SECONDNAME MIDDLENAME)
-            name_parts = name.split(',')
-
-            if len(name_parts) >= 2:
+            try:
+                student_no = match.group(2).strip()
+                name_raw = match.group(3).strip()
+                
+                # Clean the name - remove any non-letter characters except comma and space
+                # This handles cases where special chars become weird symbols
+                name = re.sub(r'[^\w\s,áéíóúÁÉÍÓÚñÑüÜ-]', '', name_raw)
+                name = ' '.join(name.split())  # Normalize whitespace
+                
+                # Extract ID (TUPC-24-0107 → 240107)
+                id_match = re.match(r'[A-Z]+-(\d{2})-(\d{4})', student_no)
+                if not id_match:
+                    print(f"DEBUG: Skipping - couldn't parse ID: {student_no}")
+                    continue
+                
+                short_id = id_match.group(1) + id_match.group(2)
+                
+                # Parse name (LASTNAME, FIRSTNAME MIDDLENAME)
+                if ',' not in name:
+                    print(f"DEBUG: Skipping - no comma in name: {name}")
+                    continue
+                
+                name_parts = name.split(',', 1)  # Split only on first comma
+                if len(name_parts) < 2:
+                    print(f"DEBUG: Skipping - couldn't split name: {name}")
+                    continue
+                
                 last_name = name_parts[0].strip().title()
+                first_name = name_parts[1].strip().title()  # Take ALL names after comma
                 
-                # Split the part after comma and take only first 2 names
-                name_after_comma = name_parts[1].strip().split()
+                # Skip if either part is empty
+                if not last_name or not first_name:
+                    print(f"DEBUG: Skipping - empty name parts: '{last_name}' / '{first_name}'")
+                    continue
                 
-                # Take first two words (first name + second name), skip third (middle name)
-                if len(name_after_comma) >= 2:
-                    first_name = f"{name_after_comma[0]} {name_after_comma[1]}".title()
-                elif len(name_after_comma) == 1:
-                    first_name = name_after_comma[0].title()
-                else:
-                    first_name = name_parts[1].strip().title()
+                print(f"DEBUG: Parsed student #{match.group(1)} - ID: {short_id}, Name: {first_name} {last_name}")
                 
                 all_students.append({
                     'user_id': short_id,
                     'first_name': first_name,
                     'last_name': last_name
                 })
+                
+            except Exception as e:
+                print(f"DEBUG: Error parsing student entry: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                continue
         
-        # Validate we got the required schedule data
+        # ========== VALIDATION ==========
         required_fields = ['course_code', 'course_title', 'day', 'time_in', 'time_out', 'course_name', 'section_name']
         missing_fields = [f for f in required_fields if f not in schedule_data]
         
         if missing_fields:
+            print(f"❌ Missing fields: {missing_fields}")
+            print(f"DEBUG: Extracted schedule_data: {schedule_data}")
             return JsonResponse({
                 'status': 'error',
                 'message': f'Could not parse schedule information. Missing: {", ".join(missing_fields)}'
             }, status=400)
         
         if not all_students:
+            print(f"❌ No students found in PDF")
+            print(f"DEBUG: First 2000 chars of text:\n{full_text[:2000]}")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Could not find any students in the PDF file'
             }, status=400)
         
-        # Create or get CourseSection
+        # ========== DATABASE OPERATIONS ==========
         course_section, created = CourseSection.objects.get_or_create(
             course_name=schedule_data['course_name'],
             section_name=schedule_data['section_name']
         )
         
-        # Create ClassSchedule
+        existing_schedule = ClassSchedule.objects.filter(
+            course_section=course_section,
+            days=schedule_data['day'],
+            time_in=schedule_data['time_in'],
+            time_out=schedule_data['time_out']
+        ).first()
+        
+        if existing_schedule:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Class schedule already exists for {course_section.course_section} on {schedule_data["day"]} from {schedule_data["time_in"]} to {schedule_data["time_out"]}'
+            }, status=400)
+        
+        print(f"✅ Creating new ClassSchedule:")
+        print(f"   Course/Section: {course_section.course_section}")
+        print(f"   Students found: {len(all_students)}")
+        
         class_schedule = ClassSchedule.objects.create(
             course_code=schedule_data['course_code'],
             course_title=schedule_data['course_title'],
@@ -1439,17 +1564,14 @@ def import_class_from_pdf(request):
             room_assignment='-'
         )
         
-        # Create student accounts
         created_students = 0
         skipped_students = 0
         
         for student_info in all_students:
             if not Account.objects.filter(user_id=student_info['user_id']).exists():
-                
-                print(f"DEBUG: Saving student - ID: {student_info['user_id']}, First: '{student_info['first_name']}', Last: '{student_info['last_name']}'")
                 Account.objects.create(
                     user_id=student_info['user_id'],
-                    email='',  # Empty - will be filled via mobile app
+                    email='',
                     first_name=student_info['first_name'],
                     last_name=student_info['last_name'],
                     role='Student',
@@ -1463,9 +1585,10 @@ def import_class_from_pdf(request):
             else:
                 skipped_students += 1
         
-        # Update student count
         class_schedule.student_count = len(all_students)
         class_schedule.save()
+        
+        print(f"✅ Import completed: {created_students} students created, {skipped_students} skipped")
         
         return JsonResponse({
             'status': 'success',
@@ -1483,36 +1606,35 @@ def import_class_from_pdf(request):
         })
         
     except Exception as e:
-        print(f"Error importing PDF: {str(e)}")
+        print(f"❌ Error importing PDF: {str(e)}")
         import traceback
         traceback.print_exc()
         return JsonResponse({
             'status': 'error',
             'message': f'Failed to parse PDF: {str(e)}'
         }, status=500)
+
+
+
         
 @admin_required
 def class_management(request):
     
-    today = timezone.now().date()
-    
-    current_semester = Semester.objects.filter(
-        start_date__lte=today,
-        end_date__gte=today
-    ).first()
-    active_semester = current_semester
+    # UPDATED: Get current active semester using is_active flag instead of date range
+    current_semester = Semester.objects.filter(is_active=True).first()
     
     # Get unread notifications count
     new_accounts_count = AccountUploadNotification.objects.filter(is_read=False).count()
     recent_uploads = AccountUploadNotification.objects.filter(is_read=False)[:5]  # Last 5
     
-    #update student count
+    # Update student count
     schedules = ClassSchedule.objects.all()
     for schedule in schedules:
         student_acc = Account.objects.filter(course_section_id=schedule.course_section_id)
         student_count = len(student_acc)
         schedule.student_count = int(student_count)
         schedule.save()
+    
     # Mark as read if user clicks "Mark as Read"
     if request.GET.get('mark_read') == 'true':
         AccountUploadNotification.objects.filter(is_read=False).update(is_read=True)
@@ -1520,6 +1642,7 @@ def class_management(request):
         return redirect('class_management')
     
     course_sections = CourseSection.objects.all()
+    
     if request.method == 'POST':
         course_code = request.POST.get('course_code')
         course_name = request.POST.get('course_name')
@@ -1528,10 +1651,12 @@ def class_management(request):
         day = request.POST.get('day')
         course_section_str = request.POST.get('course_section')
         remote_device = request.POST.get('remote_device')
+        
         try:
             section_obj = CourseSection.objects.get(course_section=course_section_str)
         except CourseSection.DoesNotExist:
             section_obj = None
+        
         ClassSchedule.objects.create(
             course_code=course_code,
             course_title=course_name,
@@ -1560,36 +1685,49 @@ def class_management(request):
         classes = paginator.page(paginator.num_pages)
     
     # Get instructors only
-    instructors = Account.objects.filter(role="Instructor").values("first_name", "last_name")
+    instructors = Account.objects.filter(role="Instructor").values("id", "first_name", "last_name")
     instructors_json = json.dumps(list(instructors), cls=DjangoJSONEncoder)
+
     
+    # UPDATED: Removed active_semester from context (not needed anymore)
     return render(request, 'class_management.html', {
-        "active_semester": active_semester,
         'course_sections': course_sections,
         'classes': classes,
         'instructors_json': instructors_json,
         'new_accounts_count': new_accounts_count,
         'recent_uploads': recent_uploads,
-        'current_semester': current_semester
+        'current_semester': current_semester,  # Only this is needed
     })
+
 
 @require_http_methods(["POST"])
 @admin_required
 def add_course_section(request):
+    """Add a new course section via AJAX"""
+    print("🔵 add_course_section called")  # Debug log
+    
     try:
+        # Parse JSON body
         data = json.loads(request.body)
         course_name = data.get('course_name', '').strip()
         section_name = data.get('section_name', '').strip()
 
+        print(f"📥 Received: course_name='{course_name}', section_name='{section_name}'")
+
+        # Validate input
         if not course_name or not section_name:
+            print("❌ Validation failed: missing fields")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Course name and section name are required.'
             }, status=400)
 
-        # Check if already exists
+        # Create course section string
         course_section_str = f"{course_name} {section_name}"
+        
+        # Check for duplicates
         if CourseSection.objects.filter(course_section=course_section_str).exists():
+            print(f"⚠️ Duplicate detected: {course_section_str}")
             return JsonResponse({
                 'status': 'error',
                 'message': f'Section "{course_section_str}" already exists.'
@@ -1600,46 +1738,98 @@ def add_course_section(request):
             course_name=course_name,
             section_name=section_name
         )
+        
+        print(f"✅ Created section: {new_section.course_section} (ID: {new_section.id})")
 
+        # Return success response
         return JsonResponse({
             'status': 'success',
             'message': 'Course section added successfully.',
             'course_section': new_section.course_section
         })
 
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON decode error: {e}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON format.'
+        }, status=400)
     except Exception as e:
+        print(f"❌ Exception in add_course_section: {e}")
+        import traceback
+        traceback.print_exc()
         return JsonResponse({
             'status': 'error',
             'message': str(e)
-        }, status=500)    
-
+        }, status=500)
 @csrf_exempt
 @admin_required
 def update_class_schedule(request, pk):
     if request.method == "POST":
         try:
+            print(f"🔵 update_class_schedule called for pk={pk}")
+            
             cls = ClassSchedule.objects.get(id=pk)
+            
+            # Safer logging - don't rely on __str__ method
+            print(f"✅ Found class schedule ID: {cls.id}, Course: {cls.course_code}")
+            
             data = json.loads(request.body)
+            print(f"📥 Received data: {data}")
 
-            prof_name = data.get("professor_name", "").strip()
-            if prof_name:
+            # Get professor by ID instead of parsing name
+            prof_id = data.get("professor_id", "").strip()
+            print(f"📋 Professor ID received: '{prof_id}'")
+            
+            if prof_id:
                 try:
-                    first, last = prof_name.split(" ", 1)
-                    professor = Account.objects.get(first_name=first, last_name=last)
+                    professor = Account.objects.get(id=prof_id, role="Instructor")
                     cls.professor = professor
+                    print(f"✅ Assigned professor: {professor.first_name} {professor.last_name} (ID: {professor.id})")
                 except Account.DoesNotExist:
                     cls.professor = None
+                    print(f"⚠️ Professor with ID '{prof_id}' not found - setting to None")
+            else:
+                cls.professor = None
+                print("ℹ️ No professor ID provided - setting to None")
 
+            # Update other fields
             cls.time_in = data.get("time_in")
             cls.time_out = data.get("time_out")
             cls.days = data.get("day")
-            cls.remote_device = data.get("remote_device") 
-            cls.save()
+            cls.remote_device = data.get("remote_device")
             
+            print(f"📝 Updating fields:")
+            print(f"   time_in: {cls.time_in}")
+            print(f"   time_out: {cls.time_out}")
+            print(f"   days: {cls.days}")
+            print(f"   remote_device: {cls.remote_device}")
+            print(f"   professor: {cls.professor_id}")
+            
+            cls.save()
+            print("✅ ClassSchedule saved successfully!")
 
             return JsonResponse({"status": "success"})
+            
+        except ClassSchedule.DoesNotExist:
+            print(f"❌ ClassSchedule with pk={pk} does not exist")
+            return JsonResponse({"status": "error", "message": "Class schedule not found"}, status=404)
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON decode error: {e}")
+            return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+            
         except Exception as e:
-            return JsonResponse({"status": "error", "message": str(e)})
+            print(f"❌ Unexpected exception: {e}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    
+    print(f"⚠️ Invalid request method: {request.method}")
+    return JsonResponse({"status": "error", "message": "Invalid request method"}, status=400)
+
+
+
 
 @csrf_exempt
 @admin_required
@@ -1845,54 +2035,109 @@ def attendance_report_template(request):
     return render(request, "attendance_report_template.html", context)
     
 
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
+from datetime import datetime, date
+from django.utils import timezone
+
 @admin_required
+@require_POST
 def set_semester(request):
-    today = date.today()
-    current_semester = Semester.objects.filter(start_date__lte=today, end_date__gte=today).first()
-
-    if request.method == "POST":
-        start = request.POST.get("semester_start")
-        end = request.POST.get("semester_end")
-
-        if not start or not end:
-            messages.error(request, "Both start and end dates are required.", extra_tags="semester")
-            return redirect("class_management")
-
+    """Set a new semester - can only be done once until end date passes"""
+    try:
+        semester_name = request.POST.get('semester_name')
+        school_year = request.POST.get('school_year')
+        start_date_str = request.POST.get('start_date')
+        end_date_str = request.POST.get('end_date')
+        
+        # Validation - Check all required fields
+        if not all([semester_name, school_year, start_date_str, end_date_str]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'All fields are required'
+            }, status=400)
+        
+        # Parse dates
         try:
-            start_date = datetime.strptime(start, "%Y-%m-%d").date()
-            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         except ValueError:
-            messages.error(request, "Invalid date format.", extra_tags="semester")
-            return redirect("class_management")
-
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid date format. Use YYYY-MM-DD'
+            }, status=400)
+        
+        # Validate end date is after start date
         if end_date <= start_date:
-            messages.error(request, "End date must be after start date.", extra_tags="semester")
-            return redirect("class_management")
-
+            return JsonResponse({
+                'status': 'error',
+                'message': 'End date must be after start date'
+            }, status=400)
+        
+        # Get current active semester
+        today = date.today()
+        current_semester = Semester.objects.filter(is_active=True).first()
+        
+        # Check if there's an active semester that hasn't ended yet
+        if current_semester:
+            if current_semester.end_date >= today:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'Cannot set new semester. Current semester "{current_semester.semester_name} ({current_semester.school_year})" is still active until {current_semester.end_date.strftime("%B %d, %Y")}. You can only set a new semester after this date.'
+                }, status=400)
+        
+        # Validate start date is not in the past (optional - remove if you want to allow past dates)
         if start_date < today:
-            messages.error(request, "Semester start date cannot be earlier than today.", extra_tags="semester")
-            return redirect("class_management")
-
-        # If a semester exists and is ongoing → block unless editing
-        if current_semester and "confirm_edit" not in request.POST:
-            messages.error(request, "A semester is already active. Confirm edit to change it.", extra_tags="semester")
-            return redirect("class_management")
-
-        # If editing, update existing; else create new
-        if current_semester and "confirm_edit" in request.POST:
-            current_semester.start_date = start_date
-            current_semester.end_date = end_date
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Semester start date cannot be earlier than today'
+            }, status=400)
+        
+        # Check for duplicate semester
+        if Semester.objects.filter(
+            semester_name=semester_name,
+            school_year=school_year
+        ).exists():
+            return JsonResponse({
+                'status': 'error',
+                'message': f'{semester_name} for school year {school_year} already exists'
+            }, status=400)
+        
+        # Archive previous semester if it exists and has ended
+        if current_semester:
+            current_semester.is_active = False
+            current_semester.is_archived = True
             current_semester.save()
-            messages.success(request, "Semester period updated successfully.", extra_tags="semester")
-        else:
-            Semester.objects.all().delete()  # make sure only one exists
-            current_semester = Semester.objects.create(start_date=start_date, end_date=end_date)
-            messages.success(request, "Semester period saved successfully.", extra_tags="semester")
+        
+        # Create new semester
+        new_semester = Semester.objects.create(
+            semester_name=semester_name,
+            school_year=school_year,
+            start_date=start_date,
+            end_date=end_date,
+            is_active=True,
+            is_archived=False
+        )
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Semester set successfully',
+            'semester': {
+                'id': new_semester.id,
+                'semester_name': new_semester.semester_name,
+                'school_year': new_semester.school_year,
+                'start_date': new_semester.start_date.strftime('%B %d, %Y'),
+                'end_date': new_semester.end_date.strftime('%B %d, %Y')
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Server error: {str(e)}'
+        }, status=500)
 
-        return redirect("class_management")
-
-    # this stays at the bottom so the page renders when not POST
-    return render(request, "class_management.html", {"current_semester": current_semester,"today": today })
 
 # API views for mobile app integration
 class AccountViewSet(viewsets.ModelViewSet):
@@ -2184,147 +2429,131 @@ def mobile_update_account(request, user_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 @instructor_or_admin_required
+@require_http_methods(["GET"])
 def get_attendance_data_api(request):
     """API endpoint to get attendance data as JSON"""
-    schedule_id = request.GET.get('schedule')
-    date_range = request.GET.get('date_range')
-    
-    if not schedule_id:
-        return JsonResponse({'error': 'No schedule selected'}, status=400)
     
     try:
-        class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        schedule_id = request.GET.get('schedule')
+        date_range = request.GET.get('date_range')
         
-        # Build class data
-        class_data = {
-            'subject': class_schedule.course_title or class_schedule.course_code,
-            'faculty_name': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
-            'course': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            'room': class_schedule.room_assignment or "TBA",
-            'year_section': class_schedule.course_section.section_name if class_schedule.course_section else "",
-            'schedule': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
-        }
+        if not schedule_id:
+            return JsonResponse({'error': 'No schedule selected'}, status=400)
         
-        # Get all attendance dates for this class schedule
-        attendance_dates = AttendanceRecord.objects.filter(
-            class_schedule_id=schedule_id
-        ).values_list('date', flat=True).distinct().order_by('date')
-        attendance_dates = list(attendance_dates)
+        try:
+            class_schedule = ClassSchedule.objects.get(id=schedule_id)
+        except ClassSchedule.DoesNotExist:
+            return JsonResponse({'error': 'Class schedule not found'}, status=404)
         
-        # Build date ranges (8-day chunks)
+        # Get all date ranges
+        attendance_dates = list(AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).values_list('date', flat=True).distinct().order_by('date'))
+        
         date_ranges = []
         for i in range(0, len(attendance_dates), 8):
             start_date = attendance_dates[i]
             end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
             date_ranges.append({
-                'value': f"{start_date}to{end_date}",
-                'label': f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
+                'value': f'{start_date}_to_{end_date}',
+                'label': f'{start_date.strftime("%b %d, %Y")} - {end_date.strftime("%b %d, %Y")}'
             })
         
-        # Initialize empty response
-        date_headers = []
-        attendance_table = []
-        
-        # If date range is selected, get attendance data
+        # If date range provided, build attendance table
         if date_range:
             try:
-                start_str, end_str = date_range.split('to')
+                start_str, end_str = date_range.split('_to_')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
             except (ValueError, TypeError):
                 start_date = end_date = None
-            
-            if start_date and end_date:
-                # Get dates in range (max 8)
-                dates_in_range = AttendanceRecord.objects.filter(
-                    class_schedule=class_schedule,
-                    date__range=[start_date, end_date]
-                ).values_list('date', flat=True).distinct().order_by('date')[:8]
-                
-                date_headers = [d.strftime('%m/%d') for d in list(dates_in_range)]
-                
-                # Get attendance records - only Present and Late (exclude Absent)
-                attendance_qs = AttendanceRecord.objects.filter(
-                    class_schedule_id=schedule_id,
-                    date__range=[start_date, end_date],
-                    status__in=['Present', 'Late']  # Only get records with actual attendance
-                ).select_related('student')
-                
-                # Map attendance data: {student_id: {date: {time_in, time_out}}}
-                attendance_data = defaultdict(lambda: defaultdict(dict))
-                for record in attendance_qs:
-                    attendance_data[record.student.id][record.date] = {
-                        'time_in': record.time_in,
-                        'time_out': record.time_out
-                    }
-                
-                # Get all students in this course section
-                students = Account.objects.filter(
-                    course_section=class_schedule.course_section,
-                    role='Student'
-                ).order_by('last_name', 'first_name')
-                
-                # Build attendance table
-                for student in students:
-                    student_data = {
-                        'name': f"{student.last_name}, {student.first_name}",
-                        'sex': student.sex[0] if student.sex else '',
-                        'dates': []
-                    }
-                    
-                    # Add attendance for each date
-                    for date in list(dates_in_range):
-                        if date in attendance_data[student.id]:
-                            att = attendance_data[student.id][date]
-                            student_data['dates'].append({
-                                'time_in': att['time_in'].strftime('%H:%M') if att['time_in'] else '',
-                                'time_out': att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                            })
-                        else:
-                            # No attendance record (Absent) - leave empty
-                            student_data['dates'].append({
-                                'time_in': '',
-                                'time_out': ''
-                            })
-                    
-                    # Pad to 8 dates
-                    while len(student_data['dates']) < 8:
-                        student_data['dates'].append({
-                            'time_in': '',
-                            'time_out': ''
-                        })
-                    
-                    attendance_table.append(student_data)
-        
         else:
-            # No date range selected - show all students with empty attendance
-            students = Account.objects.filter(
-                course_section=class_schedule.course_section,
-                role='Student'
-            ).order_by('last_name', 'first_name')
+            start_date = end_date = None
+        
+        # Get date headers
+        if start_date and end_date:
+            dates_in_range = list(AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date__range=[start_date, end_date]
+            ).values_list('date', flat=True).distinct().order_by('date')[:8])
+        else:
+            dates_in_range = attendance_dates[:8]
+        
+        date_headers = [d.strftime('%m/%d') for d in dates_in_range]
+        
+        # Get students and attendance
+        attendance_table = []
+        students = Account.objects.filter(
+            course_section=class_schedule.course_section,
+            role='Student'
+        ).order_by('last_name', 'first_name')
+        
+        # Build attendance data map
+        attendance_data = defaultdict(lambda: defaultdict(dict))
+        attendance_qs = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).select_related('student')
+        
+        for record in attendance_qs:
+            attendance_data[record.student.id][record.date] = {
+                'time_in': record.time_in,
+                'time_out': record.time_out,
+                'status': record.status
+            }
+        
+        # Build attendance table
+        for student in students:
+            student_data = {
+                'name': f'{student.last_name}, {student.first_name}',
+                'sex': student.sex[0] if student.sex else 'M',
+                'dates': []
+            }
             
-            for student in students:
-                student_data = {
-                    'name': f"{student.last_name}, {student.first_name}",
-                    'sex': student.sex[0] if student.sex else '',
-                    'dates': [{'time_in': '', 'time_out': ''} for _ in range(8)]
-                }
-                attendance_table.append(student_data)
+            for date in dates_in_range:
+                if date in attendance_data[student.id]:
+                    att = attendance_data[student.id][date]
+                    student_data['dates'].append({
+                        'time_in': att['time_in'].strftime('%H:%M') if att['time_in'] else '',
+                        'time_out': att['time_out'].strftime('%H:%M') if att['time_out'] else '',
+                        'status': att['status']
+                    })
+                else:
+                    student_data['dates'].append({
+                        'time_in': '',
+                        'time_out': '',
+                        'status': ''
+                    })
+            
+            attendance_table.append(student_data)
+        
+        # Get class data
+        instructor_account = class_schedule.professor
+        class_data = {
+            'subject': class_schedule.course_title,
+            'faculty_name': f'{instructor_account.first_name} {instructor_account.last_name}' if instructor_account else 'TBA',
+            'course': class_schedule.course_code,
+            'room': class_schedule.room_assignment,
+            'year_section': class_schedule.course_section.section_code if class_schedule.course_section else 'N/A',
+            'schedule': f'{class_schedule.days} {class_schedule.time_in.strftime("%H:%M")}-{class_schedule.time_out.strftime("%H:%M")}'
+        }
         
         return JsonResponse({
             'class_data': class_data,
             'date_ranges': date_ranges,
-            'date_headers': date_headers + [''] * (8 - len(date_headers)),
+            'date_headers': date_headers,
             'attendance_table': attendance_table,
             'student_count': len(attendance_table)
         })
         
-    except ClassSchedule.DoesNotExist:
-        return JsonResponse({'error': 'Class schedule not found'}, status=404)
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return JsonResponse({'error': str(e)}, status=500)
+        error_trace = traceback.format_exc()
+        print(f"ERROR in get_attendance_data_api: {error_trace}")
+        return JsonResponse({
+            'error': f'Server error: {str(e)}',
+            'trace': error_trace
+        }, status=500)
+
 
 # for Docx Download
 @instructor_or_admin_required
@@ -2343,14 +2572,13 @@ def generate_attendance_docx(request, schedule_id):
         from datetime import datetime
         from django.conf import settings
         import re
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-        # Require date range
         date_range = request.GET.get('date_range')
         if not date_range:
             logger.error("✗ No date range provided")
             return HttpResponse('<h3>Date Range Required</h3><p>Please select a date range.</p>', status=400)
         
-        # Parse date range
         try:
             logger.error(f"Raw date_range: '{date_range}'")
             parts = date_range.split('to')
@@ -2364,22 +2592,32 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(f"✗ Invalid date: {str(e)}")
             return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
 
-        # Load template
         template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         if not os.path.exists(template_path):
             return HttpResponse("Template not found", status=500)
         doc = Document(template_path)
         logger.error("✓ Template loaded")
 
-        # Get data
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
-        students = list(Account.objects.filter(
-            course_section=class_schedule.course_section, 
+        
+        students_qs = Account.objects.filter(
+            course_section=class_schedule.course_section,
             role='Student'
-        ).order_by('last_name', 'first_name')[:40])
+        ).order_by('last_name', 'first_name')
+
+        
+        seen_names = set()
+        students = []
+        for student in students_qs:
+            full_name = f"{student.last_name},{student.first_name}"
+            if full_name not in seen_names:
+                seen_names.add(full_name)
+                students.append(student)
+                if len(students) >= 40:
+                    break
+        
         logger.error(f"✓ {len(students)} students")
 
-        # Get attendance
         attendance_dates = list(AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
             date__range=[start_date, end_date]
@@ -2387,7 +2625,6 @@ def generate_attendance_docx(request, schedule_id):
         
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
-            status__in=['Present', 'Late'],
             date__range=[start_date, end_date]
         ).select_related('student')
 
@@ -2395,11 +2632,11 @@ def generate_attendance_docx(request, schedule_id):
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
                 'time_in': record.time_in,
-                'time_out': record.time_out
+                'time_out': record.time_out,
+                'status': record.status
             }
         logger.error(f"✓ {len(attendance_dates)} dates")
 
-        # Build replacements dictionary
         replacements = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
             '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
@@ -2409,14 +2646,12 @@ def generate_attendance_docx(request, schedule_id):
             '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
         }
 
-        # Dates
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 replacements[f'{{{{date{i}}}}}'] = attendance_dates[i-1].strftime('%m/%d/%Y')
             else:
                 replacements[f'{{{{date{i}}}}}'] = ''
 
-        # Students - track time cells for font sizing
         time_cells = set()
         for i in range(1, 41):
             if i - 1 < len(students):
@@ -2430,12 +2665,13 @@ def generate_attendance_docx(request, schedule_id):
                         date = attendance_dates[j - 1]
                         if date in attendance_data[student.id]:
                             att = attendance_data[student.id][date]
-                            time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
-                            time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                            if time_in_str and time_out_str:
-                                replacements[key] = f"{time_in_str} - {time_out_str}"
-                                time_cells.add(key)
-                                continue
+                            if att['status'] in ['Present', 'Late']:
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                if time_in_str and time_out_str:
+                                    replacements[key] = f"{time_in_str} - {time_out_str}"
+                                    time_cells.add(key)
+                                    continue
                     replacements[key] = ''
             else:
                 replacements[f'{{{{student{i}_name}}}}'] = ''
@@ -2445,36 +2681,46 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error(f"✓ Built {len(replacements)} replacements")
 
-        # OPTIMIZED: Single pass replacement
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     cell_text = cell.text
-                    # Only process cells that contain placeholders
                     if '{{' in cell_text:
                         for paragraph in cell.paragraphs:
                             text = paragraph.text
-                            has_time_data = False
                             
-                            # Replace all placeholders in this paragraph
                             for key, value in replacements.items():
                                 if key in text:
                                     text = text.replace(key, value)
-                                    if key in time_cells:
-                                        has_time_data = True
                             
-                            # Only update if changed
                             if text != paragraph.text:
                                 paragraph.text = text
+                                    
+                                if text.strip() in ['M', 'F']:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
                                 
-                                # Set font size for time cells
-                                if has_time_data:
+                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                
+                                elif ' - ' in text and ':' in text:
                                     for run in paragraph.runs:
                                         run.font.size = Pt(7)
+                                
+                                elif len(text) > 25:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif len(text) > 20:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                elif len(text) > 15:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
 
         logger.error("✓ Replacements complete")
 
-        # Save
         buffer = BytesIO()
         doc.save(buffer)
         buffer.seek(0)
@@ -2494,8 +2740,6 @@ def generate_attendance_docx(request, schedule_id):
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
-
-
 
 
 # for pdf preview also
@@ -2600,3 +2844,49 @@ def get_attendance_data_api(request):
         return JsonResponse({'error': 'Class schedule not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+    
+    # TEMPORARY! delete attendance record
+@instructor_or_admin_required
+@require_POST
+def clear_attendance(request):
+    """Clear all attendance records"""
+    try:
+        # Count records before deletion
+        count = AttendanceRecord.objects.all().count()
+        
+        # Delete all attendance records
+        AttendanceRecord.objects.all().delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': count,
+            'message': f'Deleted {count} attendance records'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+# TEMPORARY! delete student accounts
+@instructor_or_admin_required
+@require_POST
+def clear_students(request):
+    """Delete all student accounts"""
+    try:
+        # Count students before deletion
+        count = Account.objects.filter(role='Student').count()
+        
+        # Delete all student accounts
+        Account.objects.filter(role='Student').delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': count,
+            'message': f'Deleted {count} student accounts'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
