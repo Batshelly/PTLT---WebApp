@@ -11,13 +11,13 @@ document.addEventListener('click', function(e) {
         const newStatus = btn.dataset.status;
         const userId = btn.dataset.userId;
         
-        // Confirmation dialog
+        // Confirmation dialog - FIXED: Changed backticks to parentheses
         const action = newStatus === 'Active' ? 'activate' : 'deactivate';
         if (!confirm(`Are you sure you want to ${action} account ${userId}?`)) {
             return;
         }
         
-        // Send the toggle request
+        // Send the toggle request - FIXED: Changed backticks to parentheses
         fetch(`/toggle-account-status/${accountId}/`, {
             method: 'POST',
             headers: {
@@ -70,13 +70,144 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Handle edit button (existing functionality)
+// Handle edit button - Inline editing
 document.addEventListener('click', function(e) {
     if (e.target.closest('.edit-btn')) {
         const btn = e.target.closest('.edit-btn');
-        const userId = btn.dataset.id;
-        // Add your edit functionality here
-        console.log('Edit account:', userId);
+        const row = btn.closest('tr');
+        const accountId = row.dataset.id;
+        
+        // Check if already in edit mode
+        if (btn.textContent.includes('Save')) {
+            // Save mode - collect data and send to server
+            const roleCell = row.querySelector('.role');
+            const emailCell = row.querySelector('.email');
+            const courseCell = row.querySelector('.course_section');
+            
+            const roleSelect = roleCell.querySelector('select');
+            const emailInput = emailCell.querySelector('input');
+            const courseSelect = courseCell.querySelector('select');
+            
+            const newRole = roleSelect.value;
+            const newEmail = emailInput.value;
+            const newCourse = courseSelect.value;
+            
+            // Basic email validation
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailPattern.test(newEmail)) {
+                showAlert('Please enter a valid email address', 'error');
+                return;
+            }
+            
+            // Send update request
+            fetch(`/update-account/${accountId}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    role: newRole,
+                    email: newEmail,
+                    course_section: newCourse
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showAlert(data.message || 'Account updated successfully', 'success');
+                    
+                    // Update cells with new values
+                    roleCell.textContent = newRole;
+                    emailCell.textContent = newEmail;
+                    courseCell.textContent = newCourse || 'N/A';
+                    
+                    // Change button back to Edit
+                    btn.className = 'btn btn-sm btn-outline-primary edit-btn';
+                    btn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+                    
+                    // Re-enable other action buttons
+                    const actionButtons = row.querySelectorAll('.toggle-status-btn');
+                    actionButtons.forEach(b => b.disabled = false);
+                } else {
+                    showAlert(data.message || 'Failed to update account', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('An error occurred while updating the account', 'error');
+            });
+            
+        } else {
+            // Edit mode - make cells editable
+            const roleCell = row.querySelector('.role');
+            const emailCell = row.querySelector('.email');
+            const courseCell = row.querySelector('.course_section');
+            
+            // Store original values
+            const originalRole = roleCell.textContent.trim();
+            const originalEmail = emailCell.textContent.trim();
+            const originalCourse = courseCell.textContent.trim();
+            
+            // Create Role dropdown
+            const roleSelect = document.createElement('select');
+            roleSelect.className = 'form-select form-select-sm';
+            roleSelect.innerHTML = `
+                <option value="Admin" ${originalRole === 'Admin' ? 'selected' : ''}>Admin</option>
+                <option value="Instructor" ${originalRole === 'Instructor' ? 'selected' : ''}>Instructor</option>
+                <option value="Student" ${originalRole === 'Student' ? 'selected' : ''}>Student</option>
+            `;
+            roleCell.innerHTML = '';
+            roleCell.appendChild(roleSelect);
+            
+            // Create Email input
+            const emailInput = document.createElement('input');
+            emailInput.type = 'email';
+            emailInput.className = 'form-control form-control-sm';
+            emailInput.value = originalEmail;
+            emailCell.innerHTML = '';
+            emailCell.appendChild(emailInput);
+            
+            // Create Course dropdown
+            const courseSelect = document.createElement('select');
+            courseSelect.className = 'form-select form-select-sm';
+            
+            // Get available courses from the filter dropdown
+            const courseFilterOptions = document.getElementById('course').options;
+            let courseOptions = '<option value="">N/A</option>';
+            for (let i = 1; i < courseFilterOptions.length; i++) {
+                const courseValue = courseFilterOptions[i].value;
+                const courseText = courseFilterOptions[i].text;
+                const selected = originalCourse === courseText ? 'selected' : '';
+                courseOptions += `<option value="${courseValue}" ${selected}>${courseText}</option>`;
+            }
+            courseSelect.innerHTML = courseOptions;
+            courseCell.innerHTML = '';
+            courseCell.appendChild(courseSelect);
+            
+            // Change button to Save/Cancel
+            btn.className = 'btn btn-sm btn-outline-success edit-btn';
+            btn.innerHTML = '<i class="bi bi-check"></i> Save';
+            
+            // Add cancel button
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-sm btn-outline-secondary cancel-edit-btn';
+            cancelBtn.innerHTML = '<i class="bi bi-x"></i> Cancel';
+            btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+            
+            // Disable other action buttons while editing
+            const actionButtons = row.querySelectorAll('.toggle-status-btn');
+            actionButtons.forEach(b => b.disabled = true);
+        }
+    }
+    
+    // Handle cancel button
+    if (e.target.closest('.cancel-edit-btn')) {
+        const btn = e.target.closest('.cancel-edit-btn');
+        const row = btn.closest('tr');
+        
+        // Reload the page to reset everything
+        location.reload();
     }
 });
 

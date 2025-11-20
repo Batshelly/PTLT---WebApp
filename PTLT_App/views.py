@@ -1107,30 +1107,41 @@ def delete_account(request, account_id):
 
 @csrf_exempt
 @admin_required
+@require_POST
 def update_account(request, account_id):
-    print("1")
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            print("Received data:", data)  # 👈 Debug
-            
-            account = get_object_or_404(Account, id=account_id)
-
-            # Direct assignment from data
-            account.user_id = data.get('user_id', account.user_id)
-            account.first_name = data.get('first_name', account.first_name)
-            account.last_name = data.get('last_name', account.last_name)
-            account.role = data.get('role', account.role)
-            account.email = data.get('email', account.email)
-
-            account.save()
-
-            return JsonResponse({'status': 'success'})
-        except Exception as e:
-            print("Error updating account:", str(e))
-            return JsonResponse({'status': 'error', 'message': str(e)})
-
-    return JsonResponse({'status': 'invalid_request'})
+    try:
+        data = json.loads(request.body)
+        
+        # Get the account
+        account = Account.objects.get(id=account_id)
+        
+        # Update only the allowed fields
+        account.role = data.get('role')
+        account.email = data.get('email')
+        
+        # Handle course_section (assuming it's a ForeignKey)
+        course_section_value = data.get('course_section')
+        if course_section_value:
+            account.course_section = CourseSection.objects.get(course_section=course_section_value)
+        else:
+            account.course_section = None
+        
+        account.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Account {account.user_id} updated successfully'
+        })
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Account not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)
 
 import csv
 import io
