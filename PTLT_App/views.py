@@ -88,6 +88,8 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PyPDF2 import PdfMerger
+import shutil
+
 
 
 def admin_required(view_func):
