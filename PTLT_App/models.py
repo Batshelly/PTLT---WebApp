@@ -143,47 +143,6 @@ class AttendanceRecord(models.Model):
     def __str__(self):
         return f"{self.date} - {self.student.user_id} - {self.status}"
 
-
-
-class AttendanceRecord(models.Model):
-    date = models.DateField(default=timezone.now, verbose_name="Date")
-
-    class_schedule = models.ForeignKey(ClassSchedule, on_delete=models.CASCADE, verbose_name="Class Schedule")
-    professor = models.ForeignKey(
-        Account,
-        on_delete=models.CASCADE,
-        related_name="attendance_as_professor"
-    )
-    student = models.ForeignKey(
-        Account,
-        on_delete=models.CASCADE,
-        related_name="attendance_as_student"
-    )
-
-    course_section = models.ForeignKey(CourseSection, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Course & Section")
-    
-    # STUDENT ACTUAL TIMES (from CSV)
-    time_in = models.TimeField(verbose_name="Time In")
-    time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
-    
-    # PROFESSOR ACTUAL TIMES (from CSV - per date)
-    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
-    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
-
-    fingerprint_data = models.BinaryField(verbose_name="Fingerprint Data")
-
-    STATUS_CHOICES = [
-        ('Present', 'Present'),
-        ('LATE', 'Late'),
-        ('Absent', 'Absent'),
-        ('Excused', 'Excused'),
-        ('No time-out', 'No time-out'),
-    ]
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, verbose_name="Status")
-
-    def __str__(self):
-        return f"{self.date} - {self.student.user_id} - {self.status}"
-
     
 
 class Semester(models.Model):
