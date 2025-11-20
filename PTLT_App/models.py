@@ -51,6 +51,9 @@ class Account(models.Model):
 
 
 class ClassSchedule(models.Model):
+    time_in = models.TimeField(verbose_name="Time In")
+    time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
+    
     professor = models.ForeignKey(
         Account,
         on_delete=models.CASCADE,
@@ -61,6 +64,7 @@ class ClassSchedule(models.Model):
     )
     course_title = models.CharField(max_length=255, verbose_name="Course Title", blank=True, null=True)
     course_code = models.CharField(max_length=50, verbose_name="Course Code")
+    
 
     course_section = models.ForeignKey(
         CourseSection,
@@ -121,9 +125,6 @@ class AttendanceRecord(models.Model):
     )
 
     course_section = models.ForeignKey(CourseSection, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Course & Section")
-
-    time_in = models.TimeField(verbose_name="Time In")
-    time_out = models.TimeField(verbose_name="Time Out", null=True, blank=True)
     
     professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
     professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
