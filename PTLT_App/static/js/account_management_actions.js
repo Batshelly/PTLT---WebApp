@@ -77,8 +77,13 @@ document.addEventListener('click', function(e) {
         const row = btn.closest('tr');
         const accountId = row.dataset.id;
         
+        console.log('Edit button clicked');
+        console.log('Button text:', btn.textContent);
+        console.log('Account ID:', accountId);
+        
         // Check if already in edit mode
         if (btn.textContent.includes('Save')) {
+            console.log('Save mode activated');
             // Save mode - collect data and send to server
             const roleCell = row.querySelector('.role');
             const emailCell = row.querySelector('.email');
@@ -112,7 +117,21 @@ document.addEventListener('click', function(e) {
                     course_section: newCourse
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers.get('content-type'));
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    return response.text().then(text => {
+                        console.error('Non-JSON response:', text);
+                        throw new Error('Server returned non-JSON response. Check console for details.');
+                    });
+                }
+                
+                return response.json();
+            })
             .then(data => {
                 if (data.status === 'success') {
                     showAlert(data.message || 'Account updated successfully', 'success');
