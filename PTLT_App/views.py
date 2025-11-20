@@ -990,7 +990,43 @@ def account_management(request):
     }
     return render(request, 'account_management.html', context)
 
-
+@csrf_exempt
+@admin_required
+@require_http_methods(["POST"])
+def toggle_account_status(request, account_id):
+    """
+    Toggle account status between Active and Inactive
+    """
+    try:
+        account = get_object_or_404(Account, id=account_id)
+        
+        # Get the new status from request
+        new_status = request.POST.get('status')
+        
+        # Validate the status
+        if new_status not in ['Active', 'Inactive']:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid status provided'
+            }, status=400)
+        
+        # Update the account status
+        account.status = new_status
+        account.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Account {account.user_id} has been {new_status.lower()}.',
+            'new_status': new_status,
+            'user_id': account.user_id
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+    
 @csrf_exempt
 @admin_required
 def delete_account(request, account_id):

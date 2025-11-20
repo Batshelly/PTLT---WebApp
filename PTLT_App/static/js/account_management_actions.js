@@ -1,160 +1,100 @@
-document.addEventListener('DOMContentLoaded', () => {
-    setupRowButtons();
+// Get CSRF token from the form
+const getCsrfToken = () => {
+    return document.querySelector('form').elements[0].value;
+};
 
-    // 🔁 Fetch when dropdowns change
-    ['role', 'status'].forEach(id => {
-        const dropdown = document.getElementById(id);
-        dropdown.addEventListener('change', fetchFilteredAccounts);
-    });
-
-    // 🔁 Search filter with debounce
-    const searchInput = document.getElementById('search-input');
-    let searchTimeout;
-    searchInput.addEventListener('input', () => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(fetchFilteredAccounts, 300); // debounce to reduce spam
-    });
-
-    function fetchFilteredAccounts() {
-        const role = document.getElementById('role').value;
-        const status = document.getElementById('status').value;
-        const search = searchInput.value;
-
-        const params = new URLSearchParams();
-        if (role) params.append('role', role);
-        if (status) params.append('status', status);
-        if (search) params.append('search', search);
-
-        fetch(`/account_management/?${params.toString()}`, {
+// Handle toggle status button
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.toggle-status-btn')) {
+        const btn = e.target.closest('.toggle-status-btn');
+        const accountId = btn.dataset.id;
+        const newStatus = btn.dataset.status;
+        const userId = btn.dataset.userId;
+        
+        // Confirmation dialog
+        const action = newStatus === 'Active' ? 'activate' : 'deactivate';
+        if (!confirm(`Are you sure you want to ${action} account ${userId}?`)) {
+            return;
+        }
+        
+        // Send the toggle request
+        fetch(`/toggle-account-status/${accountId}/`, {
+            method: 'POST',
             headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'status': newStatus
+            })
         })
         .then(response => response.json())
         .then(data => {
-            document.querySelector('tbody').innerHTML = data.html;
-            setupRowButtons();  // Re-bind to new rows
-        })
-        .catch(err => {
-            console.error('Filtering fetch error:', err);
-        });
-    }
-
-    function setupRowButtons() {
-        const rows = document.querySelectorAll('tbody tr');
-
-        rows.forEach(row => {
-            const editBtn = row.querySelector('.edit-btn');
-            const deleteBtn = row.querySelector('.delete-btn');
-
-            editBtn.addEventListener('click', () => {
-                const isEditing = editBtn.innerText === 'Save';
-                const fields = row.querySelectorAll('.editable');
-
-                if (isEditing) {
-                    const data = {
-                        user_id: row.querySelector('.user_id').innerText.trim(),
-                        first_name: row.querySelector('.first_name').innerText.trim(),
-                        last_name: row.querySelector('.last_name').innerText.trim(),
-                        role: row.querySelector('.role select')?.value || row.querySelector('.role').innerText.trim(),
-                        email: row.querySelector('.email').innerText.trim(),
-                    };
-
-                    const accountId = row.getAttribute('data-id');
-
-                    fetch(`/update_account/${accountId}/`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': getCSRFToken(),
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(data)
-                    })
-                    .then(res => res.json())
-                    .then(json => {
-                        if (json.status === 'success' || json.status === 'no_changes') {
-                            fields.forEach(field => {
-                                field.contentEditable = "false";
-                                if (field.classList.contains('role')) {
-                                    const selected = field.querySelector('select')?.value;
-                                    field.textContent = selected || field.textContent;
-                                }
-                            });
-                            editBtn.innerText = 'Edit';
-                            if (json.status === 'success') {
-                                alert('Saved successfully!');
-                            }
-                        } else {
-                            alert('Failed to update: ' + (json.message || 'unknown error'));
-                            cancelEdit(fields, editBtn);
-                        }
-                    })
-                    .catch(() => {
-                        alert('Something went wrong.');
-                        cancelEdit(fields, editBtn);
-                    });
-
+            if (data.status === 'success') {
+                // Show success message
+                showAlert(data.message, 'success');
+                
+                // Update the button and badge
+                const row = btn.closest('tr');
+                const badge = row.querySelector('[class*="badge"]');
+                
+                // Update badge
+                if (newStatus === 'Active') {
+                    badge.className = 'badge bg-success';
+                    badge.textContent = 'Active';
                 } else {
-                    fields.forEach(field => {
-                        const original = field.textContent.trim();
-                        field.setAttribute('data-original', original);
-
-                        if (field.classList.contains('role')) {
-                            const select = document.createElement('select');
-                            select.classList.add('form-select', 'form-select-sm');
-                            ['Instructor', 'Student', 'Admin'].forEach(option => {
-                                const opt = document.createElement('option');
-                                opt.value = option;
-                                opt.text = option;
-                                if (option === original) opt.selected = true;
-                                select.appendChild(opt);
-                            });
-                            field.innerHTML = '';
-                            field.appendChild(select);
-                        } else {
-                            field.contentEditable = "true";
-                        }
-                    });
-
-                    editBtn.innerText = 'Save';
+                    badge.className = 'badge bg-danger';
+                    badge.textContent = 'Inactive';
                 }
-            });
-
-            deleteBtn.addEventListener('click', () => {
-                const accountId = row.getAttribute('data-id');
-                if (confirm('Are you sure you want to delete this account?')) {
-                    fetch(`/delete_account/${accountId}/`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': getCSRFToken()
-                        }
-                    }).then(res => {
-                        if (res.ok) {
-                            row.remove();
-                            alert('Account deleted.');
-                        } else {
-                            alert('Failed to delete.');
-                        }
-                    });
+                
+                // Update button
+                if (newStatus === 'Active') {
+                    // Change to deactivate button
+                    btn.dataset.status = 'Inactive';
+                    btn.className = 'btn btn-sm btn-outline-warning toggle-status-btn';
+                    btn.innerHTML = '<i class="bi bi-lock"></i> Deactivate';
+                } else {
+                    // Change to activate button
+                    btn.dataset.status = 'Active';
+                    btn.className = 'btn btn-sm btn-outline-success toggle-status-btn';
+                    btn.innerHTML = '<i class="bi bi-unlock"></i> Activate';
                 }
-            });
-        });
-    }
-
-    function cancelEdit(fields, editBtn) {
-        fields.forEach(field => {
-            const original = field.getAttribute('data-original');
-            if (field.classList.contains('role') && field.querySelector('select')) {
-                field.textContent = original;
             } else {
-                field.textContent = original;
-                field.contentEditable = "false";
+                showAlert(data.message || 'An error occurred', 'error');
             }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('An error occurred while updating the account status', 'error');
         });
-        editBtn.innerText = 'Edit';
-    }
-
-    function getCSRFToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]').value;
     }
 });
+
+// Handle edit button (existing functionality)
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.edit-btn')) {
+        const btn = e.target.closest('.edit-btn');
+        const userId = btn.dataset.id;
+        // Add your edit functionality here
+        console.log('Edit account:', userId);
+    }
+});
+
+// Helper function to show alerts
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // Insert at top of container
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
