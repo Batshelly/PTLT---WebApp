@@ -126,8 +126,7 @@ class AttendanceRecord(models.Model):
 
     course_section = models.ForeignKey(CourseSection, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Course & Section")
     
-    professor_time_in = models.TimeField(verbose_name="Professor Time In", null=True, blank=True)
-    professor_time_out = models.TimeField(verbose_name="Professor Time Out", null=True, blank=True)
+    
 
     fingerprint_data = models.BinaryField(verbose_name="Fingerprint Data")
 
