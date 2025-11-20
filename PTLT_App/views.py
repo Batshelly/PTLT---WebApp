@@ -2634,7 +2634,7 @@ def generate_attendance_docx(request, schedule_id):
         if full_name not in seen_names:
             seen_names.add(full_name)
             students.append(student)
-            if len(students) >= 60:  # 60 student limit
+            if len(students) >= 60:
                 break
     
     logger.error(f"✓ {len(students)} students")
@@ -2778,7 +2778,7 @@ def generate_attendance_docx(request, schedule_id):
 
     # Student data for Template2 (students 41-60)
     time_cells2 = set()
-    for i in range(1, 41):  # Template has 40 slots
+    for i in range(1, 41):
         if i - 1 < len(students_template2):
             student = students_template2[i - 1]
             replacements2[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
@@ -2834,6 +2834,7 @@ def generate_attendance_docx(request, schedule_id):
     docx2_path = os.path.join(temp_dir, f"attendance_template2_{schedule_id}.docx")
     pdf1_path = os.path.join(temp_dir, f"attendance_template1_{schedule_id}.pdf")
     pdf2_path = os.path.join(temp_dir, f"attendance_template2_{schedule_id}.pdf")
+    final_pdf_path = os.path.join(temp_dir, f"attendance_{schedule_id}{date_range_str}.pdf")
     
     doc1.save(docx1_path)
     doc2.save(docx2_path)
@@ -2853,6 +2854,9 @@ def generate_attendance_docx(request, schedule_id):
     except subprocess.CalledProcessError as e:
         logger.error(f"✗ PDF conversion failed: {str(e)}")
         return HttpResponse("PDF conversion failed. LibreOffice may not be installed.", status=500)
+    except Exception as e:
+        logger.error(f"✗ Unexpected error during conversion: {str(e)}")
+        return HttpResponse(f"PDF conversion error: {str(e)}", status=500)
 
     # Merge PDFs
     try:
@@ -2860,7 +2864,6 @@ def generate_attendance_docx(request, schedule_id):
         pdf_merger.append(pdf1_path)
         pdf_merger.append(pdf2_path)
         
-        final_pdf_path = os.path.join(temp_dir, f"attendance_{schedule_id}{date_range_str}.pdf")
         pdf_merger.write(final_pdf_path)
         pdf_merger.close()
         
