@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('PTLT_App', '0010_classschedule_professor_time_in_and_more'),  # ← Fixed!
+        ('PTLT_App', '0010_classschedule_professor_time_in_and_more'),
     ]
 
     operations = [
