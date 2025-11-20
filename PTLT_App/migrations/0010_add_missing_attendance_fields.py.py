@@ -41,3 +41,4 @@ class Migration(migrations.Migration):
             field=models.TimeField(verbose_name='Professor Time Out', null=True, blank=True),
         ),
     ]
+
