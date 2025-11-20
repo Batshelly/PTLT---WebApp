@@ -4,13 +4,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('PTLT_App', '0009_alter_attendancerecord_status'),  # ← CORRECT
+        ('PTLT_App', '0009_alter_attendancerecord_status'),
     ]
 
     operations = [
-        # REMOVE from ClassSchedule (Railway has these, we're dropping them)
-    
-        
         # ADD to AttendanceRecord
         migrations.AddField(
             model_name='attendancerecord',
