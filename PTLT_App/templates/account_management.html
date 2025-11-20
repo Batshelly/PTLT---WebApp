@@ -335,11 +335,11 @@
 <script src="{% static 'js/account_management_actions.js' %}"></script>
 
 <script>
-// Course filter functionality
-document.getElementById('course').addEventListener('change', function() {
+// Filter functionality for all dropdowns
+function updateFilters() {
     const role = document.getElementById('role').value;
     const status = document.getElementById('status').value;
-    const course = this.value;
+    const course = document.getElementById('course').value;
     const search = document.getElementById('search-input').value;
     
     const params = new URLSearchParams(window.location.search);
@@ -362,6 +362,18 @@ document.getElementById('course').addEventListener('change', function() {
     
     // Redirect with new parameters
     window.location.href = '?' + params.toString();
+}
+
+// Add event listeners to all filter dropdowns
+document.getElementById('role').addEventListener('change', updateFilters);
+document.getElementById('status').addEventListener('change', updateFilters);
+document.getElementById('course').addEventListener('change', updateFilters);
+
+// Handle search input with debouncing
+let searchTimeout;
+document.getElementById('search-input').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(updateFilters, 500); // Wait 500ms after user stops typing
 });
 </script>
 
