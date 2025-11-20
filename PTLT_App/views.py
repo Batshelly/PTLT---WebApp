@@ -2599,6 +2599,36 @@ cloudconvert.configure(
     sandbox=settings.CLOUDCONVERT_SANDBOX,
 )
 
+def _convert_docx_to_pdf_cloudconvert(input_path, output_path):
+    job = cloudconvert.Job.create(payload={
+        "tasks": {
+            "import-my-file": {"operation": "import/upload"},
+            "convert-my-file": {
+                "operation": "convert",
+                "input": "import-my-file",
+                "output_format": "pdf",
+            },
+            "export-my-file": {
+                "operation": "export/url",
+                "input": "convert-my-file",
+            },
+        }
+    })
+    import_task = next(t for t in job["tasks"] if t["operation"] == "import/upload")
+    cloudconvert.Task.upload(file_name=input_path, task=import_task)
+    job = cloudconvert.Job.wait(job["id"])
+    export_task = next(t for t in job["tasks"] if t["operation"] == "export/url")
+    file_info = export_task["result"]["files"][0]
+    url = file_info["url"]
+
+    r = requests.get(url, stream=True, timeout=120)
+    r.raise_for_status()
+    with open(output_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
     """Generate Attendance Report - 60 Students, Both Templates, PDF Output"""
@@ -2755,7 +2785,6 @@ def generate_attendance_docx(request, schedule_id):
                             for run in paragraph.runs:
                                 if key in run.text:
                                     run.text = run.text.replace(key, str(value))
-                                    # Apply Arial 8pt for time cells
                                     if key in time_cells1:
                                         run.font.name = 'Arial'
                                         run.font.size = Pt(8)
@@ -2836,7 +2865,6 @@ def generate_attendance_docx(request, schedule_id):
                             for run in paragraph.runs:
                                 if key in run.text:
                                     run.text = run.text.replace(key, str(value))
-                                    # Apply Arial 8pt for time cells
                                     if key in time_cells2:
                                         run.font.name = 'Arial'
                                         run.font.size = Pt(8)
@@ -2853,49 +2881,6 @@ def generate_attendance_docx(request, schedule_id):
     doc2.save(docx2_path)
     logger.error("✓ Saved temporary DOCX files")
 
-    def _convert_docx_to_pdf_cloudconvert(input_path, output_path):
-        """
-        Upload local DOCX to CloudConvert, convert to PDF, download to output_path.
-        """
-        job = cloudconvert.Job.create(payload={
-            "tasks": {
-                "import-my-file": {
-                    "operation": "import/upload",
-                },
-                "convert-my-file": {
-                    "operation": "convert",
-                    "input": "import-my-file",
-                    "output_format": "pdf",
-                },
-                "export-my-file": {
-                    "operation": "export/url",
-                    "input": "convert-my-file",
-                },
-            }
-        })
-
-        # Find import task
-        import_task = next(t for t in job["tasks"] if t["operation"] == "import/upload")
-        # Upload the DOCX file
-        cloudconvert.Task.upload(file_name=input_path, task=import_task)
-
-        # Wait for job completion
-        job = cloudconvert.Job.wait(job["id"])
-
-        # Get export URL
-        export_task = next(t for t in job["tasks"] if t["operation"] == "export/url")
-        file_info = export_task["result"]["files"][0]
-        url = file_info["url"]
-
-        # Download the PDF
-        r = requests.get(url, stream=True, timeout=120)
-        r.raise_for_status()
-        with open(output_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-    # Convert both DOCX files via CloudConvert
     try:
         _convert_docx_to_pdf_cloudconvert(docx1_path, pdf1_path)
         _convert_docx_to_pdf_cloudconvert(docx2_path, pdf2_path)
@@ -2915,11 +2900,9 @@ def generate_attendance_docx(request, schedule_id):
         
         logger.error("✓ Merged PDFs")
         
-        # Return PDF response
         with open(final_pdf_path, 'rb') as pdf_file:
             response = HttpResponse(pdf_file.read(), content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}{date_range_str}.pdf"'
-            
             logger.error("✓ PDF sent to user")
             return response
     
@@ -2928,7 +2911,6 @@ def generate_attendance_docx(request, schedule_id):
         return HttpResponse(f"Error merging PDFs: {str(e)}", status=500)
     
     finally:
-        # Cleanup temp files
         try:
             for f in [docx1_path, docx2_path, pdf1_path, pdf2_path, final_pdf_path]:
                 if os.path.exists(f):
