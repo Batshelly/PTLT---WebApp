@@ -75,11 +75,13 @@ document.addEventListener('click', function(e) {
     if (e.target.closest('.edit-btn')) {
         const btn = e.target.closest('.edit-btn');
         const row = btn.closest('tr');
-        const accountId = row.dataset.id;
+        const accountId = row.dataset.id;  // This is the primary key (id)
+        const userId = btn.dataset.id;      // This is the user_id
         
         console.log('Edit button clicked');
         console.log('Button text:', btn.textContent);
-        console.log('Account ID:', accountId);
+        console.log('Account ID (pk):', accountId);
+        console.log('User ID:', userId);
         
         // Check if already in edit mode
         if (btn.textContent.includes('Save')) {
@@ -105,6 +107,7 @@ document.addEventListener('click', function(e) {
             }
             
             // Send update request
+            // Use accountId (primary key) for the URL
             fetch(`/update-account/${accountId}/`, {
                 method: 'POST',
                 headers: {
