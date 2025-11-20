@@ -2840,14 +2840,19 @@ def generate_attendance_docx(request, schedule_id):
     doc2.save(docx2_path)
     logger.error(f"✓ Saved temporary DOCX files")
 
-    # Convert to PDF using LibreOffice
+    # Convert to PDF using LibreOffice (soffice CLI)
     try:
+        soffice = shutil.which("soffice")
+        if not soffice:
+            logger.error("✗ soffice not found in PATH; LibreOffice is not installed or not exposed")
+            return HttpResponse("LibreOffice (soffice) is not available on the server.", status=500)
+
         subprocess.run([
-            'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx1_path
+            soffice, '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx1_path
         ], check=True, capture_output=True, timeout=30)
         
         subprocess.run([
-            'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx2_path
+            soffice, '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx2_path
         ], check=True, capture_output=True, timeout=30)
         
         logger.error(f"✓ Converted DOCX to PDF")
@@ -2872,7 +2877,7 @@ def generate_attendance_docx(request, schedule_id):
         # Return PDF response
         with open(final_pdf_path, 'rb') as pdf_file:
             response = HttpResponse(pdf_file.read(), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}{date_range_str}.pdf"'
+            response['Content-Disposition'] = f'attachment; filename=\"attendance_{schedule_id}{date_range_str}.pdf\"'
             
             logger.error("✓ PDF sent to user")
             return response
@@ -2890,6 +2895,7 @@ def generate_attendance_docx(request, schedule_id):
             logger.error("✓ Cleaned up temporary files")
         except Exception as e:
             logger.error(f"⚠️ Error cleaning temp files: {str(e)}")
+
 
 
 
