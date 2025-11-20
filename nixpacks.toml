@@ -1,6 +1,5 @@
 # Nixpacks configuration for Django with MySQL
 [phases.setup]
-# System packages needed for compilation
 nixPkgs = [
     "python311",
     "gcc",
@@ -15,17 +14,18 @@ nixPkgs = [
     "zlib"
 ]
 
-# APT packages (LibreOffice for PDF conversion)
-aptPkgs = ["libreoffice", "libreoffice-writer"]
-
 # Install Python dependencies
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = [
+    "apt-get update",
+    "apt-get install -y libreoffice libreoffice-writer",
+    "pip install -r requirements.txt"
+]
 
-# Build phase (no secrets needed here)
+# Build phase
 [phases.build]
-cmds = ["echo 'Build complete - no build step needed for Django'"]
+cmds = ["python manage.py collectstatic --noinput"]
 
-# Runtime start command (environment variables available here)
+# Runtime start command
 [start]
 cmd = "gunicorn PTLT.wsgi --bind 0.0.0.0:$PORT --log-file -"
