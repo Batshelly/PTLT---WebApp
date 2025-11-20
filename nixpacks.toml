@@ -1,0 +1,31 @@
+# Nixpacks configuration for Django with MySQL
+[phases.setup]
+# System packages needed for compilation
+nixPkgs = [
+    "python311",
+    "gcc",
+    "mysql80",
+    "pkg-config",
+    "cairo",
+    "pango",
+    "gdk-pixbuf",
+    "libxml2",
+    "libxslt",
+    "libjpeg",
+    "zlib"
+]
+
+# APT packages (LibreOffice for PDF conversion)
+aptPkgs = ["libreoffice", "libreoffice-writer"]
+
+# Install Python dependencies
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+# Build phase (no secrets needed here)
+[phases.build]
+cmds = ["echo 'Build complete - no build step needed for Django'"]
+
+# Runtime start command (environment variables available here)
+[start]
+cmd = "gunicorn PTLT.wsgi --bind 0.0.0.0:$PORT --log-file -"
