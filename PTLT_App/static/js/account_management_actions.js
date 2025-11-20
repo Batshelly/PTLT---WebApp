@@ -108,7 +108,7 @@ document.addEventListener('click', function(e) {
             
             // Send update request
             // Use accountId (primary key) for the URL
-            fetch(`/update-account/${accountId}/`, {
+            fetch(`/update_account/${accountId}/`, {
                 method: 'POST',
                 headers: {
                     'X-CSRFToken': getCsrfToken(),
