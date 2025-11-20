@@ -75,12 +75,20 @@ from docxtpl import DocxTemplate
 from io import BytesIO
 import os
 from django.conf import settings
-
 from django.core.mail import EmailMessage
-from django.conf import settings
 import random
 from datetime import datetime, timedelta, date
 from .models import Account, CourseSection, ClassSchedule
+import re
+import logging
+import tempfile
+import subprocess
+from collections import defaultdict
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from PyPDF2 import PdfMerger
+
 
 def admin_required(view_func):
     """Decorator for admin-only views - handles both AJAX and regular requests"""
@@ -2569,22 +2577,11 @@ def get_attendance_data_api(request):
 # for Docx Download
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX - OPTIMIZED VERSION"""
-    import logging
+    """Generate DOCX - OPTIMIZED VERSION + 60 Students + PDF Export"""
     logger = logging.getLogger(__name__)
-    logger.error(f"=== DOCX Download Started for schedule_id: {schedule_id} ===")
+    logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
     
     try:
-        import os
-        from docx import Document
-        from docx.shared import Pt
-        from io import BytesIO
-        from collections import defaultdict
-        from datetime import datetime
-        from django.conf import settings
-        import re
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-
         date_range = request.GET.get('date_range')
         if not date_range:
             logger.error("✗ No date range provided")
@@ -2603,11 +2600,16 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(f"✗ Invalid date: {str(e)}")
             return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
 
-        template_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
-        if not os.path.exists(template_path):
-            return HttpResponse("Template not found", status=500)
-        doc = Document(template_path)
-        logger.error("✓ Template loaded")
+
+        # Load BOTH templates
+        template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
+        
+        if not os.path.exists(template1_path) or not os.path.exists(template2_path):
+            return HttpResponse("Templates not found", status=500)
+        
+        logger.error("✓ Both templates loaded")
+
 
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
         
@@ -2616,7 +2618,7 @@ def generate_attendance_docx(request, schedule_id):
             role='Student'
         ).order_by('last_name', 'first_name')
 
-        
+
         seen_names = set()
         students = []
         for student in students_qs:
@@ -2624,10 +2626,11 @@ def generate_attendance_docx(request, schedule_id):
             if full_name not in seen_names:
                 seen_names.add(full_name)
                 students.append(student)
-                if len(students) >= 40:
+                if len(students) >= 60:
                     break
         
         logger.error(f"✓ {len(students)} students")
+
 
         attendance_dates = list(AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
@@ -2639,6 +2642,7 @@ def generate_attendance_docx(request, schedule_id):
             date__range=[start_date, end_date]
         ).select_related('student')
 
+
         attendance_data = defaultdict(lambda: defaultdict(dict))
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
@@ -2648,7 +2652,16 @@ def generate_attendance_docx(request, schedule_id):
             }
         logger.error(f"✓ {len(attendance_dates)} dates")
 
-        replacements = {
+
+        students_template1 = students[0:40]
+        students_template2 = students[40:60]
+        logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
+
+
+        # ==================== TEMPLATE 1 PROCESSING ====================
+        doc1 = Document(template1_path)
+        
+        replacements1 = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
             '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
             '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
@@ -2657,18 +2670,28 @@ def generate_attendance_docx(request, schedule_id):
             '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
         }
 
+
+        # Date headers with professor time
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
-                replacements[f'{{{{date{i}}}}}'] = attendance_dates[i-1].strftime('%m/%d/%Y')
+                date_str = attendance_dates[i-1].strftime('%m/%d/%Y')
+                
+                # Add professor time in/out below the date
+                if class_schedule.professor_time_in and class_schedule.professor_time_out:
+                    prof_time = f"\n{class_schedule.professor_time_in.strftime('%H:%M')}-{class_schedule.professor_time_out.strftime('%H:%M')}"
+                    replacements1[f'{{{{date{i}}}}}'] = date_str + prof_time
+                else:
+                    replacements1[f'{{{{date{i}}}}}'] = date_str
             else:
-                replacements[f'{{{{date{i}}}}}'] = ''
+                replacements1[f'{{{{date{i}}}}}'] = ''
 
-        time_cells = set()
+
+        time_cells1 = set()
         for i in range(1, 41):
-            if i - 1 < len(students):
-                student = students[i - 1]
-                replacements[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
+            if i - 1 < len(students_template1):
+                student = students_template1[i - 1]
+                replacements1[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                replacements1[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
                 
                 for j in range(1, 9):
                     key = f'{{{{student{i}_time{j}}}}}'
@@ -2680,19 +2703,21 @@ def generate_attendance_docx(request, schedule_id):
                                 time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                                 time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                 if time_in_str and time_out_str:
-                                    replacements[key] = f"{time_in_str} - {time_out_str}"
-                                    time_cells.add(key)
+                                    replacements1[key] = f"{time_in_str} - {time_out_str}"
+                                    time_cells1.add(key)
                                     continue
-                    replacements[key] = ''
+                    replacements1[key] = ''
             else:
-                replacements[f'{{{{student{i}_name}}}}'] = ''
-                replacements[f'{{{{student{i}_sex}}}}'] = ''
+                replacements1[f'{{{{student{i}_name}}}}'] = ''
+                replacements1[f'{{{{student{i}_sex}}}}'] = ''
                 for j in range(1, 9):
-                    replacements[f'{{{{student{i}_time{j}}}}}'] = ''
+                    replacements1[f'{{{{student{i}_time{j}}}}}'] = ''
 
-        logger.error(f"✓ Built {len(replacements)} replacements")
 
-        for table in doc.tables:
+        logger.error(f"✓ Built {len(replacements1)} replacements for Template1")
+
+
+        for table in doc1.tables:
             for row in table.rows:
                 for cell in row.cells:
                     cell_text = cell.text
@@ -2700,7 +2725,7 @@ def generate_attendance_docx(request, schedule_id):
                         for paragraph in cell.paragraphs:
                             text = paragraph.text
                             
-                            for key, value in replacements.items():
+                            for key, value in replacements1.items():
                                 if key in text:
                                     text = text.replace(key, value)
                             
@@ -2730,27 +2755,182 @@ def generate_attendance_docx(request, schedule_id):
                                     for run in paragraph.runs:
                                         run.font.size = Pt(9)
 
-        logger.error("✓ Replacements complete")
 
-        buffer = BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
+        logger.error("✓ Template1 replacements complete")
 
-        filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
-        logger.error(f"✓ Complete: {filename}")
 
-        response = HttpResponse(
-            buffer.read(),
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
+        # ==================== TEMPLATE 2 PROCESSING ====================
+        doc2 = Document(template2_path)
+        
+        replacements2 = {
+            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
+            '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
+            '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
+            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
+            '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
+            '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}"
+        }
+
+
+        # Date headers with professor time
+        for i in range(1, 9):
+            if i - 1 < len(attendance_dates):
+                date_str = attendance_dates[i-1].strftime('%m/%d/%Y')
+                
+                # Add professor time in/out below the date
+                if class_schedule.professor_time_in and class_schedule.professor_time_out:
+                    prof_time = f"\n{class_schedule.professor_time_in.strftime('%H:%M')}-{class_schedule.professor_time_out.strftime('%H:%M')}"
+                    replacements2[f'{{{{date{i}}}}}'] = date_str + prof_time
+                else:
+                    replacements2[f'{{{{date{i}}}}}'] = date_str
+            else:
+                replacements2[f'{{{{date{i}}}}}'] = ''
+
+
+        time_cells2 = set()
+        for i in range(1, 21):
+            student_index = 40 + i - 1
+            if student_index < len(students):
+                student = students[student_index]
+                replacements2[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                replacements2[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
+                
+                for j in range(1, 9):
+                    key = f'{{{{student{i}_time{j}}}}}'
+                    if j - 1 < len(attendance_dates):
+                        date = attendance_dates[j - 1]
+                        if date in attendance_data[student.id]:
+                            att = attendance_data[student.id][date]
+                            if att['status'] in ['Present', 'Late']:
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                if time_in_str and time_out_str:
+                                    replacements2[key] = f"{time_in_str} - {time_out_str}"
+                                    time_cells2.add(key)
+                                    continue
+                    replacements2[key] = ''
+            else:
+                replacements2[f'{{{{student{i}_name}}}}'] = ''
+                replacements2[f'{{{{student{i}_sex}}}}'] = ''
+                for j in range(1, 9):
+                    replacements2[f'{{{{student{i}_time{j}}}}}'] = ''
+
+
+        logger.error(f"✓ Built {len(replacements2)} replacements for Template2")
+
+
+        for table in doc2.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_text = cell.text
+                    if '{{' in cell_text:
+                        for paragraph in cell.paragraphs:
+                            text = paragraph.text
+                            
+                            for key, value in replacements2.items():
+                                if key in text:
+                                    text = text.replace(key, value)
+                            
+                            if text != paragraph.text:
+                                paragraph.text = text
+                                    
+                                if text.strip() in ['M', 'F']:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+                                
+                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                
+                                elif ' - ' in text and ':' in text:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                
+                                elif len(text) > 25:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif len(text) > 20:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                elif len(text) > 15:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+
+
+        logger.error("✓ Template2 replacements complete")
+
+
+        # ==================== CONVERT TO PDF ====================
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
+            temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
+            
+            doc1.save(temp_docx1)
+            doc2.save(temp_docx2)
+            logger.error("✓ Temp DOCX files saved")
+            
+            try:
+                subprocess.run([
+                    'libreoffice', '--headless', '--convert-to', 'pdf',
+                    '--outdir', tmpdir, temp_docx1
+                ], check=True, capture_output=True)
+                
+                subprocess.run([
+                    'libreoffice', '--headless', '--convert-to', 'pdf',
+                    '--outdir', tmpdir, temp_docx2
+                ], check=True, capture_output=True)
+                
+                logger.error("✓ PDF conversion done")
+            except Exception as e:
+                logger.error(f"✗ PDF conversion failed: {e}")
+                buffer = BytesIO()
+                doc1.save(buffer)
+                buffer.seek(0)
+                filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
+                response = HttpResponse(
+                    buffer.read(),
+                    content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                )
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
+            
+            try:
+                pdf1 = os.path.join(tmpdir, 'attendance_1.pdf')
+                pdf2 = os.path.join(tmpdir, 'attendance_2.pdf')
+                
+                merger = PdfMerger()
+                merger.append(pdf1)
+                merger.append(pdf2)
+                
+                final_pdf = os.path.join(tmpdir, 'merged.pdf')
+                merger.write(final_pdf)
+                merger.close()
+                
+                logger.error("✓ PDFs merged successfully")
+                
+                with open(final_pdf, 'rb') as f:
+                    pdf_data = f.read()
+                
+                filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60.pdf"
+                logger.error(f"✓ Complete: {filename}")
+                
+                response = HttpResponse(pdf_data, content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
+                
+            except Exception as e:
+                logger.error(f"✗ PDF merge failed: {e}")
+                return HttpResponse(f"Error merging PDFs: {e}", status=500)
+
 
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+
+
 
 
 # for pdf preview also
