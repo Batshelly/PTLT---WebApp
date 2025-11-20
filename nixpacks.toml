@@ -17,6 +17,10 @@ nixPkgs = [
 
 aptPkgs = ["libreoffice"]
 
+[phases.setup]
+aptPkgs = ["libreoffice", "libreoffice-writer"]
+
+
 # Install Python dependencies
 [phases.install]
 cmds = ["pip install -r requirements.txt"]

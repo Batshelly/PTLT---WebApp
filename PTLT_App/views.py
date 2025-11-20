@@ -2839,20 +2839,17 @@ def generate_attendance_docx(request, schedule_id):
     doc2.save(docx2_path)
     logger.error(f"✓ Saved temporary DOCX files")
 
-    # Convert to PDF using LibreOffice
+        # Convert to PDF using docx2pdf
     try:
-        subprocess.run([
-            'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx1_path
-        ], check=True, capture_output=True, timeout=30)
+        from docx2pdf import convert
         
-        subprocess.run([
-            'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx2_path
-        ], check=True, capture_output=True, timeout=30)
+        convert(docx1_path, pdf1_path)
+        convert(docx2_path, pdf2_path)
         
         logger.error(f"✓ Converted DOCX to PDF")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         logger.error(f"✗ PDF conversion failed: {str(e)}")
-        return HttpResponse("PDF conversion failed. LibreOffice may not be installed.", status=500)
+        return HttpResponse(f"PDF conversion failed: {str(e)}", status=500)
 
     # Merge PDFs
     try:
