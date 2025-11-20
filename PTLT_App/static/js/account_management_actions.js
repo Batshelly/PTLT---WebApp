@@ -148,6 +148,12 @@ document.addEventListener('click', function(e) {
                     btn.className = 'btn btn-sm btn-outline-primary edit-btn';
                     btn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
                     
+                    // Remove the cancel button
+                    const cancelBtn = row.querySelector('.cancel-edit-btn');
+                    if (cancelBtn) {
+                        cancelBtn.remove();
+                    }
+
                     // Re-enable other action buttons
                     const actionButtons = row.querySelectorAll('.toggle-status-btn');
                     actionButtons.forEach(b => b.disabled = false);
