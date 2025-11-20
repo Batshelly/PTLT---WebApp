@@ -89,6 +89,9 @@ from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PyPDF2 import PdfMerger
 import shutil
+import requests
+import cloudconvert  # pip install cloudconvert
+
 
 
 
@@ -2588,6 +2591,14 @@ from PyPDF2 import PdfMerger
 import subprocess
 import tempfile
 
+import cloudconvert
+from django.conf import settings
+
+cloudconvert.configure(
+    api_key=settings.CLOUDCONVERT_API_KEY,
+    sandbox=settings.CLOUDCONVERT_SANDBOX,
+)
+
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
     """Generate Attendance Report - 60 Students, Both Templates, PDF Output"""
@@ -2830,7 +2841,7 @@ def generate_attendance_docx(request, schedule_id):
                                         run.font.name = 'Arial'
                                         run.font.size = Pt(8)
 
-    # ==================== SAVE DOCX & CONVERT TO PDF ====================
+    # ==================== SAVE DOCX & CONVERT TO PDF (CloudConvert) ====================
     temp_dir = tempfile.gettempdir()
     docx1_path = os.path.join(temp_dir, f"attendance_template1_{schedule_id}.docx")
     docx2_path = os.path.join(temp_dir, f"attendance_template2_{schedule_id}.docx")
@@ -2840,30 +2851,58 @@ def generate_attendance_docx(request, schedule_id):
     
     doc1.save(docx1_path)
     doc2.save(docx2_path)
-    logger.error(f"✓ Saved temporary DOCX files")
+    logger.error("✓ Saved temporary DOCX files")
 
-    # Convert to PDF using LibreOffice (soffice CLI)
+    def _convert_docx_to_pdf_cloudconvert(input_path, output_path):
+        """
+        Upload local DOCX to CloudConvert, convert to PDF, download to output_path.
+        """
+        job = cloudconvert.Job.create(payload={
+            "tasks": {
+                "import-my-file": {
+                    "operation": "import/upload",
+                },
+                "convert-my-file": {
+                    "operation": "convert",
+                    "input": "import-my-file",
+                    "output_format": "pdf",
+                },
+                "export-my-file": {
+                    "operation": "export/url",
+                    "input": "convert-my-file",
+                },
+            }
+        })
+
+        # Find import task
+        import_task = next(t for t in job["tasks"] if t["operation"] == "import/upload")
+        # Upload the DOCX file
+        cloudconvert.Task.upload(file_name=input_path, task=import_task)
+
+        # Wait for job completion
+        job = cloudconvert.Job.wait(job["id"])
+
+        # Get export URL
+        export_task = next(t for t in job["tasks"] if t["operation"] == "export/url")
+        file_info = export_task["result"]["files"][0]
+        url = file_info["url"]
+
+        # Download the PDF
+        r = requests.get(url, stream=True, timeout=120)
+        r.raise_for_status()
+        with open(output_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    # Convert both DOCX files via CloudConvert
     try:
-        soffice = shutil.which("soffice")
-        if not soffice:
-            logger.error("✗ soffice not found in PATH; LibreOffice is not installed or not exposed")
-            return HttpResponse("LibreOffice (soffice) is not available on the server.", status=500)
-
-        subprocess.run([
-            soffice, '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx1_path
-        ], check=True, capture_output=True, timeout=30)
-        
-        subprocess.run([
-            soffice, '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx2_path
-        ], check=True, capture_output=True, timeout=30)
-        
-        logger.error(f"✓ Converted DOCX to PDF")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"✗ PDF conversion failed: {str(e)}")
-        return HttpResponse("PDF conversion failed. LibreOffice may not be installed.", status=500)
+        _convert_docx_to_pdf_cloudconvert(docx1_path, pdf1_path)
+        _convert_docx_to_pdf_cloudconvert(docx2_path, pdf2_path)
+        logger.error("✓ Converted DOCX to PDF via CloudConvert")
     except Exception as e:
-        logger.error(f"✗ Unexpected error during conversion: {str(e)}")
-        return HttpResponse(f"PDF conversion error: {str(e)}", status=500)
+        logger.error(f"✗ PDF conversion via CloudConvert failed: {str(e)}")
+        return HttpResponse(f"PDF conversion error (CloudConvert): {str(e)}", status=500)
 
     # Merge PDFs
     try:
@@ -2874,12 +2913,12 @@ def generate_attendance_docx(request, schedule_id):
         pdf_merger.write(final_pdf_path)
         pdf_merger.close()
         
-        logger.error(f"✓ Merged PDFs")
+        logger.error("✓ Merged PDFs")
         
         # Return PDF response
         with open(final_pdf_path, 'rb') as pdf_file:
             response = HttpResponse(pdf_file.read(), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename=\"attendance_{schedule_id}{date_range_str}.pdf\"'
+            response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}{date_range_str}.pdf"'
             
             logger.error("✓ PDF sent to user")
             return response
@@ -2897,11 +2936,6 @@ def generate_attendance_docx(request, schedule_id):
             logger.error("✓ Cleaned up temporary files")
         except Exception as e:
             logger.error(f"⚠️ Error cleaning temp files: {str(e)}")
-
-
-
-
-    
 
 
 

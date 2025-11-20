@@ -230,3 +230,8 @@ LOGGING = {
 
 # Allow iframes from same origin (for PDF preview)
 X_FRAME_OPTIONS = 'SAMEORIGIN'
+
+import os
+
+CLOUDCONVERT_API_KEY = os.environ.get("CLOUDCONVERT_API_KEY", "")
+CLOUDCONVERT_SANDBOX = os.environ.get("CLOUDCONVERT_SANDBOX", "True") == "True"
