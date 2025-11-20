@@ -15,11 +15,8 @@ nixPkgs = [
     "zlib"
 ]
 
-aptPkgs = ["libreoffice"]
-
-[phases.setup]
+# APT packages (LibreOffice for PDF conversion)
 aptPkgs = ["libreoffice", "libreoffice-writer"]
-
 
 # Install Python dependencies
 [phases.install]
