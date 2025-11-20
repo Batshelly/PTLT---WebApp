@@ -4,19 +4,12 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('PTLT_App', '0010_alter_attendancerecord_status'),  # ← Your last local migration
+        ('PTLT_App', '0009_alter_attendancerecord_status'),  # ← CORRECT
     ]
 
     operations = [
         # REMOVE from ClassSchedule (Railway has these, we're dropping them)
-        migrations.RemoveField(
-            model_name='classschedule',
-            name='professor_time_in',
-        ),
-        migrations.RemoveField(
-            model_name='classschedule',
-            name='professor_time_out',
-        ),
+    
         
         # ADD to AttendanceRecord
         migrations.AddField(
