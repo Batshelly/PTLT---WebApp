@@ -1,6 +1,5 @@
 [phases.setup]
 nixPkgs = [
-  "...",        
   "python311",
   "gcc",
   "mysql80",
@@ -12,8 +11,13 @@ nixPkgs = [
   "libxslt",
   "libjpeg",
   "zlib",
-  "libreoffice"  
+  "libreoffice"
 ]
+
+# Make LibreOffice (soffice) visible in PATH
+env = {
+  PATH = "$PATH:/nix/var/nix/profiles/default/bin"
+}
 
 [phases.install]
 cmds = [
