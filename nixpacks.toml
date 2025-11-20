@@ -1,8 +1,9 @@
 [phases.setup]
 nixPkgs = [
-  "...",
+  "...",        
   "python311",
   "gcc",
+  "mysql80",
   "pkg-config",
   "cairo",
   "pango",
@@ -11,20 +12,18 @@ nixPkgs = [
   "libxslt",
   "libjpeg",
   "zlib",
-  "libreoffice"
+  "libreoffice"  
 ]
 
-
-# Install Python dependencies
 [phases.install]
 cmds = [
-    "pip install -r requirements.txt"
+  "pip install -r requirements.txt"
 ]
 
-# Build phase
 [phases.build]
-cmds = ["python manage.py collectstatic --noinput"]
+cmds = [
+  "python manage.py collectstatic --noinput"
+]
 
-# Runtime start command
 [start]
 cmd = "gunicorn PTLT.wsgi --bind 0.0.0.0:$PORT --log-file -"
