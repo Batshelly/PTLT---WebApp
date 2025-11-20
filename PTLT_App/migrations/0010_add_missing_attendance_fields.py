@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('PTLT_App', '0009_alter_attendancerecord_status'),  # ← Your last local migration
+        ('PTLT_App', '0010_alter_attendancerecord_status'),  # ← Your last local migration
     ]
 
     operations = [
@@ -41,4 +41,3 @@ class Migration(migrations.Migration):
             field=models.TimeField(verbose_name='Professor Time Out', null=True, blank=True),
         ),
     ]
-
