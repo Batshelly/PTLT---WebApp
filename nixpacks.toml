@@ -1,19 +1,19 @@
-# Nixpacks configuration for Django with MySQL
 [phases.setup]
 nixPkgs = [
-    "python311",
-    "gcc",
-    "mysql80",
-    "pkg-config",
-    "cairo",
-    "pango",
-    "gdk-pixbuf",
-    "libxml2",
-    "libxslt",
-    "libjpeg",
-    "zlib",
-    "libreoffice"   # ← ADD THIS
+  "...",
+  "python311",
+  "gcc",
+  "pkg-config",
+  "cairo",
+  "pango",
+  "gdk-pixbuf",
+  "libxml2",
+  "libxslt",
+  "libjpeg",
+  "zlib",
+  "libreoffice"
 ]
+
 
 # Install Python dependencies
 [phases.install]
