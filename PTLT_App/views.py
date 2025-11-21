@@ -3041,49 +3041,49 @@ def generate_attendance_docx(request, schedule_id):
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
                 return response
 
+            with tempfile.TemporaryDirectory() as tmpdir:
+            temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
+            temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
+            
+            doc1.save(temp_docx1)
+            doc2.save(temp_docx2)
+            logger.error("✓ Temp DOCX files saved")
+            
             try:
-               # pdf1 = os.path.join(tmpdir, 'attendance_1.pdf')
-                #pdf2 = os.path.join(tmpdir, 'attendance_2.pdf')
+                # ===== CONVERSION PHASE =====
+                # Convert both DOCX files to PDF
+                pdf1 = convert_docx_to_pdf_railway(temp_docx1, tmpdir)
+                pdf2 = convert_docx_to_pdf_railway(temp_docx2, tmpdir)
+                
+                # Validate PDF sizes
+                pdf1_size = os.path.getsize(pdf1)
+                pdf2_size = os.path.getsize(pdf2)
+                logger.error(f"PDF1: {pdf1_size} bytes, PDF2: {pdf2_size} bytes")
+                
+                logger.error("✓ PDF conversion done")
+                
+                # ===== MERGE PHASE =====
+                # Validate PDFs exist before merge
                 if not os.path.exists(pdf1) or not os.path.exists(pdf2):
                     raise FileNotFoundError("One or both PDF files not found after conversion")
-
                 
+                # Merge PDFs
                 merger = PdfMerger()
                 merger.append(pdf1)
                 merger.append(pdf2)
-
+                
                 final_pdf = os.path.join(tmpdir, 'merged.pdf')
                 merger.write(final_pdf)
                 merger.close()
-
+                
                 logger.error("✓ PDFs merged successfully")
-
+                
+                # ===== RETURN PHASE =====
+                # Read and return merged PDF
                 with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
-
-                filename = (
-                    f"Attendance_{class_schedule.course_code}"
-                    f"{date_range_str}_students1-60.pdf"
-                )
-                logger.error(f"✓ Complete: {filename}")
-
-                response = HttpResponse(pdf_data, content_type='application/pdf')
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                return response
-
-            except Exception as e:
-                logger.error(f"✗ PDF merge failed: {e}")
-                return HttpResponse(f"Error merging PDFs: {e}", status=500)
-
-    except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        logger.error(f"✗ ERROR: {error_msg}")
-        return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
-
-
-
-
+                
+                filename = f"Attendance_
 
 # for pdf preview also
 
