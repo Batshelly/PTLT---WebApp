@@ -2654,7 +2654,6 @@ def generate_attendance_docx(request, schedule_id):
     logger = logging.getLogger(__name__)
     logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
 
-
     try:
         # ----------------- Parse date range -----------------
         date_range = request.GET.get('date_range')
@@ -2664,7 +2663,6 @@ def generate_attendance_docx(request, schedule_id):
                 '<h3>Date Range Required</h3><p>Please select a date range.</p>',
                 status=400
             )
-
 
         try:
             logger.error(f"Raw date_range: '{date_range}'")
@@ -2682,7 +2680,6 @@ def generate_attendance_docx(request, schedule_id):
                 status=400
             )
 
-
         # ----------------- Load templates -----------------
         template1_path = os.path.join(
             settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx'
@@ -2691,23 +2688,18 @@ def generate_attendance_docx(request, schedule_id):
             settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx'
         )
 
-
         if not os.path.exists(template1_path) or not os.path.exists(template2_path):
             return HttpResponse("Templates not found", status=500)
 
-
         logger.error("✓ Both templates loaded")
 
-
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
-
 
         # ----------------- Build student list (max 60, dedup by name) -----------------
         students_qs = Account.objects.filter(
             course_section=class_schedule.course_section,
-            role='Student'
+            role='Student'  # Filter students only
         ).order_by('last_name', 'first_name')
-
 
         seen_names = set()
         students = []
@@ -2719,27 +2711,25 @@ def generate_attendance_docx(request, schedule_id):
                 if len(students) >= 60:
                     break
 
-
         logger.error(f"✓ {len(students)} students")
-
 
         # ----------------- Dates & attendance data -----------------
         attendance_dates = list(
             AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
-                date__range=[start_date, end_date]
+                date__range=[start_date, end_date],
+                student__role='Student'  # Filter by student role
             )
             .values_list('date', flat=True)
             .distinct()
             .order_by('date')[:8]
         )
 
-
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
-            date__range=[start_date, end_date]
+            date__range=[start_date, end_date],
+            student__role='Student'  # Filter students only
         ).select_related('student')
-
 
         # Map: attendance_data[student_id][date] = {...}
         attendance_data = defaultdict(lambda: defaultdict(dict))
@@ -2748,51 +2738,45 @@ def generate_attendance_docx(request, schedule_id):
                 'time_in': record.time_in,
                 'time_out': record.time_out,
                 'status': record.status,
-                # include professor times so we can reuse them
                 'professor_time_in': getattr(record, 'professor_time_in', None),
                 'professor_time_out': getattr(record, 'professor_time_out', None),
             }
 
-
         logger.error(f"✓ {len(attendance_dates)} dates")
 
-
         # =================================================================
-        # 🔵 CHANGE: Fetch actual professor times from AttendanceRecord per date
+        # Fetch actual professor times from AttendanceRecord per date filtered by student role
         # =================================================================
         prof_times = {}
         for d in attendance_dates:
             prof_str = ''
-            # 🔵 Query the first attendance record for this specific date to get professor times
             first_record = AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
-                date=d
+                date=d,
+                student__role='Student'  # Added filter to ensure correct student role
             ).first()
-            
+
             if first_record:
                 pti = first_record.professor_time_in
                 pto = first_record.professor_time_out
                 if pti and pto:
                     prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
-                    logger.error(f"  ✓ Found prof times for {d}: {prof_str}")  # 🔵 Added debug
+                    logger.error(f"  ✓ Found prof times for {d}: {prof_str}")
                 else:
-                    logger.error(f"  ✗ Prof times NULL for {d}")  # 🔵 Added debug
+                    logger.error(f"  ✗ Prof times NULL for {d}")
             else:
-                logger.error(f"  ✗ No attendance record found for {d}")  # 🔵 Added debug
-            
-            prof_times[d] = prof_str
+                logger.error(f"  ✗ No attendance record found for {d}")
 
+            prof_times[d] = prof_str
 
         students_template1 = students[0:40]   # 1–40
         students_template2 = students[40:60]  # 41–60
         logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
 
-
         # ======================================================================
         # TEMPLATE 1 (students 1–40)
         # ======================================================================
         doc1 = Document(template1_path)
-
 
         replacements1 = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
@@ -2816,26 +2800,22 @@ def generate_attendance_docx(request, schedule_id):
             ),
         }
 
-
         # Dates + professor times for Template 1
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
                 replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                # 🔵 CHANGE: Use actual professor times from AttendanceRecord
                 prof_time_value = prof_times.get(d, '')
                 replacements1[f'{{{{prof{i}}}}}'] = prof_time_value
-                logger.error(f"  prof{i} ({d}): '{prof_time_value}'")  # 🔵 Changed logging
+                logger.error(f"  prof{i} ({d}): '{prof_time_value}'")
             else:
                 replacements1[f'{{{{date{i}}}}}'] = ''
                 replacements1[f'{{{{prof{i}}}}}'] = ''
-
 
         # generic {{prof}} – use first date if present
         replacements1['{{prof}}'] = (
             prof_times.get(attendance_dates[0], '') if attendance_dates else ''
         )
-
 
         # Student rows (1–40)
         time_cells1 = set()
@@ -2844,7 +2824,6 @@ def generate_attendance_docx(request, schedule_id):
                 student = students_template1[i - 1]
                 replacements1[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
                 replacements1[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
-
 
                 for j in range(1, 9):
                     key = f'{{{{student{i}_time{j}}}}}'
@@ -2873,9 +2852,7 @@ def generate_attendance_docx(request, schedule_id):
                 for j in range(1, 9):
                     replacements1[f'{{{{student{i}_time{j}}}}}'] = ''
 
-
         logger.error(f"✓ Built {len(replacements1)} replacements for Template1")
-
 
         # Apply replacements with font adjustments (tables only, as in your current code)
         for table in doc1.tables:
@@ -2886,15 +2863,12 @@ def generate_attendance_docx(request, schedule_id):
                         for paragraph in cell.paragraphs:
                             text = paragraph.text
 
-
                             for key, value in replacements1.items():
                                 if key in text:
                                     text = text.replace(key, str(value))
 
-
                             if text != paragraph.text:
                                 paragraph.text = text
-
 
                                 # Font size adjustments based on content type
                                 if text.strip() in ['M', 'F']:
@@ -2902,18 +2876,13 @@ def generate_attendance_docx(request, schedule_id):
                                     for run in paragraph.runs:
                                         run.font.size = Pt(9)
 
-
                                 elif '/' in text and len(text) <= 10 and text[0].isdigit():
-                                    # Date format MM/DD/YYYY
                                     for run in paragraph.runs:
                                         run.font.size = Pt(8)
 
-
                                 elif ' - ' in text and ':' in text:
-                                    # Time format HH:MM-HH:MM or HH:MM - HH:MM
                                     for run in paragraph.runs:
                                         run.font.size = Pt(7)
-
 
                                 elif len(text) > 25:
                                     for run in paragraph.runs:
@@ -2925,20 +2894,16 @@ def generate_attendance_docx(request, schedule_id):
                                     for run in paragraph.runs:
                                         run.font.size = Pt(9)
 
-
         logger.error("✓ Template1 replacements complete")
-
 
         # Save first template doc to in-memory buffer
         buffer = BytesIO()
         doc1.save(buffer)
         buffer.seek(0)
 
-
         # Prepare filename (sanitize if needed)
         sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
         filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
-
 
         # Return the buffer as response with proper content type
         response = HttpResponse(
@@ -2948,9 +2913,7 @@ def generate_attendance_docx(request, schedule_id):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
-
-
-    except Exception as e:  # ← THIS STAYS (outer exception handler)
+    except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
