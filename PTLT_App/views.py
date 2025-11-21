@@ -2717,7 +2717,8 @@ def generate_attendance_docx(request, schedule_id):
         attendance_dates = list(
             AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
-                date__range=[start_date, end_date]
+                date__range=[start_date, end_date],
+                student__role='Student'
             )
             .values_list('date', flat=True)
             .distinct()
@@ -2726,8 +2727,16 @@ def generate_attendance_docx(request, schedule_id):
 
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
-            date__range=[start_date, end_date]
+            date__range=[start_date, end_date],
+            student__role='Student'
         ).select_related('student')
+
+        # Diagnostic Logging: verify we're getting the records (REMOVE ONCE CONFIRMED)
+        for rec in attendance_qs:
+            logger.error(
+                f"DB CHECK: id={rec.id} student_id={rec.student_id} date={rec.date} "
+                f"prof_in={rec.professor_time_in} prof_out={rec.professor_time_out}"
+            )
 
         # Map: attendance_data[student_id][date] = {...}
         attendance_data = defaultdict(lambda: defaultdict(dict))
@@ -2736,26 +2745,32 @@ def generate_attendance_docx(request, schedule_id):
                 'time_in': record.time_in,
                 'time_out': record.time_out,
                 'status': record.status,
-                # include professor times so we can reuse them
-                'professor_time_in': getattr(record, 'professor_time_in', None),
-                'professor_time_out': getattr(record, 'professor_time_out', None),
+                'professor_time_in': record.professor_time_in,
+                'professor_time_out': record.professor_time_out,
             }
 
         logger.error(f"✓ {len(attendance_dates)} dates")
 
-        # Build per‑date professor time string once: prof_times[date] = "HH:MM-HH:MM" or ""
+        # ====================== BUILD ACTUAL PROFESSOR TIMES ==========================
         prof_times = {}
         for d in attendance_dates:
             prof_str = ''
-            for student_id, date_map in attendance_data.items():
-                rec = date_map.get(d)
-                if not rec:
-                    continue
-                pti = rec.get('professor_time_in')
-                pto = rec.get('professor_time_out')
+            # Always get the first student record for this date (prof times are same for all rows that day)
+            rec = AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date=d,
+                student__role='Student'
+            ).first()
+            if rec:
+                pti = rec.professor_time_in
+                pto = rec.professor_time_out
+                logger.error(f"PROF DEBUG: date={d} pti={pti} pto={pto}")
                 if pti and pto:
                     prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
-                    break
+                else:
+                    logger.error(f"✗ Prof times NULL for {d} ({pti}, {pto})")
+            else:
+                logger.error(f"✗ NO AttendanceRecord found for {d}")
             prof_times[d] = prof_str
 
         students_template1 = students[0:40]   # 1–40
@@ -2794,8 +2809,9 @@ def generate_attendance_docx(request, schedule_id):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
                 replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                # per‑column professor time
-                replacements1[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
+                prof_time_value = prof_times.get(d, '')
+                replacements1[f'{{{{prof{i}}}}}'] = prof_time_value
+                logger.error(f"prof{i} ({d}): '{prof_time_value}'")
             else:
                 replacements1[f'{{{{date{i}}}}}'] = ''
                 replacements1[f'{{{{prof{i}}}}}'] = ''
@@ -2853,11 +2869,12 @@ def generate_attendance_docx(request, schedule_id):
 
                             for key, value in replacements1.items():
                                 if key in text:
-                                    text = text.replace(key, value)
+                                    text = text.replace(key, str(value))
 
                             if text != paragraph.text:
                                 paragraph.text = text
 
+                                # Font size adjustments based on content type
                                 if text.strip() in ['M', 'F']:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                     for run in paragraph.runs:
@@ -2882,7 +2899,6 @@ def generate_attendance_docx(request, schedule_id):
                                         run.font.size = Pt(9)
 
         logger.error("✓ Template1 replacements complete")
-        # Instead of PDF conversion & merge, just save DOCX and return
 
         # Save first template doc to in-memory buffer
         buffer = BytesIO()
@@ -2901,12 +2917,12 @@ def generate_attendance_docx(request, schedule_id):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
-
-    except Exception as e:  # ← THIS STAYS (outer exception handler)
+    except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+
 
 
 # for pdf preview also
