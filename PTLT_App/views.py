@@ -3053,6 +3053,8 @@ def generate_attendance_docx(request, schedule_id):
 
                 response = HttpResponse(pdf_data, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                response['Content-Type'] = 'application/pdf'  # ← ADD THIS LINE
+                response['X-Content-Type-Options'] = 'nosniff'  # ← ADD THIS LINE (tell browser don't guess)
 
                 logger.error(f"✓ Returning PDF response now")  # ← ADD THIS
                 return response
@@ -3075,7 +3077,7 @@ def generate_attendance_docx(request, schedule_id):
                     doc1.save(buffer)
                     buffer.seek(0)
                     
-                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.pdf"
+                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.docx"
                     response = HttpResponse(
                         buffer.read(),
                         content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
