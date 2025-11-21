@@ -3042,16 +3042,23 @@ def generate_attendance_docx(request, schedule_id):
                 # ===== RETURN PHASE =====
                 with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
-                
+
+                logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")  # ← ADD THIS
+
                 filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60.pdf"
                 logger.error(f"✓ Complete: {filename}")
-                
+
+                logger.error(f"✓ About to return PDF response")  # ← ADD THIS
+
                 response = HttpResponse(pdf_data, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+                logger.error(f"✓ Returning PDF response now")  # ← ADD THIS
                 return response
                 
             except Exception as e:
                 logger.error(f"✗ PDF processing failed: {str(e)}")
+                logger.error(f"Full traceback: {traceback.format_exc()}") 
                 try:
                     # Fallback: Return merged DOCX
                     doc1.add_page_break()
