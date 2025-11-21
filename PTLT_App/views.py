@@ -3085,7 +3085,7 @@ def generate_attendance_docx(request, schedule_id):
                         buffer.read(),
                         content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                     )
-                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    response['Content-Disposition'] = 'attachment; filename=' + filename
                     logger.error(f"✓ Fallback: Returning merged DOCX: {filename}")
                     return response
                 except Exception as e2:
