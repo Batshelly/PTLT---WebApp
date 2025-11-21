@@ -3038,29 +3038,24 @@ def generate_attendance_docx(request, schedule_id):
                 merger.close()
                 
                 logger.error("✓ PDFs merged successfully")
-                
-                # ===== RETURN PHASE =====
-                with open(final_pdf, 'rb') as f:
-                    pdf_data = f.read()
+                logger.error(f"✓ Opening final PDF: {final_pdf}")
                 
                 sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
                 filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.pdf"
-                logger.error(f"✓ Complete: {filename}")
-                logger.error(f"✓ PDF filename sanitized: {filename}")
-                logger.error(f"✓ PDF data size: {len(pdf_data)} bytes")
+                logger.error(f"✓ Filename: {filename}")
                 
-                # FORCE PDF response with all possible headers
-                response = HttpResponse(pdf_data)
+                from django.http import FileResponse
+                response = FileResponse(
+                    open(final_pdf, 'rb'),
+                    as_attachment=True,
+                    filename=filename
+                )
                 response['Content-Type'] = 'application/pdf'
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                response['Content-Length'] = len(pdf_data)
-                response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-                response['Pragma'] = 'no-cache'
-                response['Expires'] = '0'
-                response['X-Content-Type-Options'] = 'nosniff'
                 
-                logger.error(f"✓ Response headers set")
-                logger.error(f"✓ Content-Type: {response.get('Content-Type')}")
+                logger.error(f"✓ FileResponse created")
+                logger.error(f"✓ About to return PDF response")
+                
+                return response
                 
             except Exception as e:
                 logger.error(f"✗ PDF processing failed: {str(e)}")
