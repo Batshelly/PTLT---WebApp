@@ -3075,7 +3075,7 @@ def generate_attendance_docx(request, schedule_id):
                     doc1.save(buffer)
                     buffer.seek(0)
                     
-                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.docx"
+                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.pdf"
                     response = HttpResponse(
                         buffer.read(),
                         content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
