@@ -2757,21 +2757,30 @@ def generate_attendance_docx(request, schedule_id):
         logger.error(f"✓ {len(attendance_dates)} dates")
 
 
-        # Build per‑date professor time string once: prof_times[date] = "HH:MM-HH:MM" or ""
+        # =================================================================
+        # 🔵 CHANGE: Fetch actual professor times from AttendanceRecord per date
+        # =================================================================
         prof_times = {}
         for d in attendance_dates:
             prof_str = ''
-            for student_id, date_map in attendance_data.items():
-                rec = date_map.get(d)
-                if not rec:
-                    continue
-                pti = rec.get('professor_time_in')
-                pto = rec.get('professor_time_out')
+            # 🔵 Query the first attendance record for this specific date to get professor times
+            first_record = AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date=d
+            ).first()
+            
+            if first_record:
+                pti = first_record.professor_time_in
+                pto = first_record.professor_time_out
                 if pti and pto:
                     prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
-                    break
+                    logger.error(f"  ✓ Found prof times for {d}: {prof_str}")  # 🔵 Added debug
+                else:
+                    logger.error(f"  ✗ Prof times NULL for {d}")  # 🔵 Added debug
+            else:
+                logger.error(f"  ✗ No attendance record found for {d}")  # 🔵 Added debug
+            
             prof_times[d] = prof_str
-            logger.error(f"  prof time for {d}: '{prof_str}'")  # 🟢 Emoji marked: Added for debugging
 
 
         students_template1 = students[0:40]   # 1–40
@@ -2813,10 +2822,10 @@ def generate_attendance_docx(request, schedule_id):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
                 replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                # 🟢 Emoji marked: Ensure {{prof#}} is populated with professor times 
+                # 🔵 CHANGE: Use actual professor times from AttendanceRecord
                 prof_time_value = prof_times.get(d, '')
                 replacements1[f'{{{{prof{i}}}}}'] = prof_time_value
-                logger.error(f"  prof{i} ({d}): '{prof_time_value}'")  # 🟢 Emoji marked: Added for debugging
+                logger.error(f"  prof{i} ({d}): '{prof_time_value}'")  # 🔵 Changed logging
             else:
                 replacements1[f'{{{{date{i}}}}}'] = ''
                 replacements1[f'{{{{prof{i}}}}}'] = ''
@@ -2869,7 +2878,6 @@ def generate_attendance_docx(request, schedule_id):
 
 
         # Apply replacements with font adjustments (tables only, as in your current code)
-        # 🟢 Emoji marked: Improved replacement logic to handle {{prof#}} more reliably
         for table in doc1.tables:
             for row in table.rows:
                 for cell in row.cells:
