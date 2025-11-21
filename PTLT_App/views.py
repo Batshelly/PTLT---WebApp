@@ -3040,17 +3040,18 @@ def generate_attendance_docx(request, schedule_id):
                 logger.error("✓ PDFs merged successfully")
                 logger.error(f"✓ Opening final PDF: {final_pdf}")
                 
-                sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
-                filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.pdf"
-                logger.error(f"✓ Filename: {filename}")
+
                 
-                from django.http import FileResponse
+                sanitized_code = re.sub(r'[^a-zA-Z0-9]', '', str(class_schedule.course_code))
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                filename = f"attendance_{sanitized_code}_{timestamp}.pdf"
+
                 response = FileResponse(
                     open(final_pdf, 'rb'),
                     as_attachment=True,
-                    filename=filename
+                    filename=filename,
+                    content_type='application/pdf',
                 )
-                response['Content-Type'] = 'application/pdf'
                 
                 logger.error(f"✓ FileResponse created")
                 logger.error(f"✓ About to return PDF response")
