@@ -3045,7 +3045,8 @@ def generate_attendance_docx(request, schedule_id):
 
                 logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")  # ← ADD THIS
 
-                filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60.pdf"
+                sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
+                filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.pdf"
                 logger.error(f"✓ Complete: {filename}")
 
                 logger.error(f"✓ About to return PDF response")  # ← ADD THIS
