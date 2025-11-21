@@ -81,6 +81,7 @@ from datetime import datetime, timedelta, date
 from .models import Account, CourseSection, ClassSchedule
 import re
 import logging
+logger = logging.getLogger(__name__)
 import tempfile
 import subprocess
 from collections import defaultdict
@@ -88,6 +89,61 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PyPDF2 import PdfMerger
+
+
+def convert_docx_to_pdf_railway(docx_path, output_dir):
+    """
+    Convert DOCX to PDF optimized for Railway deployment.
+
+    - Sets HOME to /tmp (LibreOffice requirement)
+    - Uses --norestore to avoid startup dialogs
+    - 60-second timeout is enforced
+    - Validates PDF file was actually created and is non-empty
+
+    Args:
+        docx_path: Path to source DOCX file
+        output_dir: Directory for PDF output
+
+    Returns:
+        Path to generated PDF file
+
+    Raises:
+        Exception: If conversion fails or times out
+    """
+    env = os.environ.copy()
+    env['HOME'] = '/tmp'
+    env['SAL_NO_STARTUP_WIZARD'] = '1'
+
+    pdf_path = os.path.splitext(docx_path)[0] + '.pdf'
+    logger.error(f"Converting {os.path.basename(docx_path)} → PDF")
+
+    try:
+        subprocess.run([
+            'libreoffice',
+            '--headless',
+            '--norestore',
+            '--convert-to', 'pdf',
+            '--outdir', output_dir,
+            docx_path
+        ], check=True, capture_output=True, timeout=60, env=env)
+
+        # Validate output was created and is not empty
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF not created at {pdf_path}")
+        if os.path.getsize(pdf_path) == 0:
+            raise ValueError("PDF file is empty")
+
+        logger.error(f"✓ PDF created: {os.path.basename(pdf_path)}")
+        return pdf_path
+
+    except subprocess.TimeoutExpired:
+        logger.error("✗ Conversion timeout (>60s)")
+        raise Exception("LibreOffice conversion timeout")
+
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "Unknown error"
+        logger.error(f"✗ Conversion failed: {stderr}")
+        raise Exception(f"LibreOffice error: {stderr}")
 
 
 def admin_required(view_func):
@@ -2871,15 +2927,14 @@ def generate_attendance_docx(request, schedule_id):
             logger.error("✓ Temp DOCX files saved")
             
             try:
-                subprocess.run([
-                    'libreoffice', '--headless', '--convert-to', 'pdf',
-                    '--outdir', tmpdir, temp_docx1
-                ], check=True, capture_output=True)
-                
-                subprocess.run([
-                    'libreoffice', '--headless', '--convert-to', 'pdf',
-                    '--outdir', tmpdir, temp_docx2
-                ], check=True, capture_output=True)
+                pdf1 = convert_docx_to_pdf_railway(temp_docx1, tmpdir)
+                pdf2 = convert_docx_to_pdf_railway(temp_docx2, tmpdir)
+                # Validate PDF sizes
+                pdf1_size = os.path.getsize(pdf1)
+                pdf2_size = os.path.getsize(pdf2)
+                logger.error(f"PDF1: {pdf1_size} bytes, PDF2: {pdf2_size} bytes")
+
+
                 
                 logger.error("✓ PDF conversion done")
             except Exception as e:
@@ -2896,8 +2951,11 @@ def generate_attendance_docx(request, schedule_id):
                 return response
             
             try:
-                pdf1 = os.path.join(tmpdir, 'attendance_1.pdf')
-                pdf2 = os.path.join(tmpdir, 'attendance_2.pdf')
+               # pdf1 = os.path.join(tmpdir, 'attendance_1.pdf')
+                #pdf2 = os.path.join(tmpdir, 'attendance_2.pdf')
+                if not os.path.exists(pdf1) or not os.path.exists(pdf2):
+                    raise FileNotFoundError("One or both PDF files not found after conversion")
+
                 
                 merger = PdfMerger()
                 merger.append(pdf1)
