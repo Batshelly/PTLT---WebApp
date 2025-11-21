@@ -3042,22 +3042,25 @@ def generate_attendance_docx(request, schedule_id):
                 # ===== RETURN PHASE =====
                 with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
-
-                logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")  # ← ADD THIS
-
+                
                 sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
                 filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.pdf"
                 logger.error(f"✓ Complete: {filename}")
-
-                logger.error(f"✓ About to return PDF response")  # ← ADD THIS
-
-                response = HttpResponse(pdf_data, content_type='application/pdf')
+                logger.error(f"✓ PDF filename sanitized: {filename}")
+                logger.error(f"✓ PDF data size: {len(pdf_data)} bytes")
+                
+                # FORCE PDF response with all possible headers
+                response = HttpResponse(pdf_data)
+                response['Content-Type'] = 'application/pdf'
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                response['Content-Type'] = 'application/pdf'  # ← ADD THIS LINE
-                response['X-Content-Type-Options'] = 'nosniff'  # ← ADD THIS LINE (tell browser don't guess)
-
-                logger.error(f"✓ Returning PDF response now")  # ← ADD THIS
-                return response
+                response['Content-Length'] = len(pdf_data)
+                response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response['Pragma'] = 'no-cache'
+                response['Expires'] = '0'
+                response['X-Content-Type-Options'] = 'nosniff'
+                
+                logger.error(f"✓ Response headers set")
+                logger.error(f"✓ Content-Type: {response.get('Content-Type')}")
                 
             except Exception as e:
                 logger.error(f"✗ PDF processing failed: {str(e)}")
