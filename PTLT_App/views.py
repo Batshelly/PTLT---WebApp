@@ -3083,7 +3083,7 @@ def generate_attendance_docx(request, schedule_id):
                 with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
                 
-                filename = f"Attendance_
+                filename = f"Attendance_{class_schedule.course_code}{date_range_str}_FALLBACK.docx"
 
 # for pdf preview also
 
