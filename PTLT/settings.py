@@ -230,3 +230,5 @@ LOGGING = {
 
 # Allow iframes from same origin (for PDF preview)
 X_FRAME_OPTIONS = 'SAMEORIGIN'
+
+
