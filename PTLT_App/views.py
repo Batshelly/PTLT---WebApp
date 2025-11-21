@@ -3041,13 +3041,13 @@ def generate_attendance_docx(request, schedule_id):
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
                 return response
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-            temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
-            temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
-            
-            doc1.save(temp_docx1)
-            doc2.save(temp_docx2)
-            logger.error("✓ Temp DOCX files saved")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
+                temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
+                
+                doc1.save(temp_docx1)
+                doc2.save(temp_docx2)
+                logger.error("✓ Temp DOCX files saved")
             
             try:
                 # ===== CONVERSION PHASE =====
@@ -3084,6 +3084,48 @@ def generate_attendance_docx(request, schedule_id):
                     pdf_data = f.read()
                 
                 filename = f"Attendance_{class_schedule.course_code}{date_range_str}_FALLBACK.docx"
+                response = HttpResponse(pdf_data, content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                
+                return response
+            
+            except Exception as e:
+                # Fallback: Return merged DOCX if PDF fails
+                logger.error(f"✗ PDF processing failed: {str(e)}")
+                try:
+                    # Merge DOCX as fallback
+                    doc1.add_page_break()
+                    for paragraph in doc2.paragraphs:
+                        doc1.add_paragraph(paragraph.text)
+                    for table in doc2.tables:
+                        new_table = doc1.add_table(rows=len(table.rows), cols=len(table.columns))
+                        for i, row in enumerate(table.rows):
+                            for j, cell in enumerate(row.cells):
+                                new_table.rows[i].cells[j].text = cell.text
+                    
+                    buffer = BytesIO()
+                    doc1.save(buffer)
+                    buffer.seek(0)
+                    
+                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.docx"
+                    response = HttpResponse(
+                        buffer.read(),
+                        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    )
+                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    logger.error(f"✓ Fallback: Returning merged DOCX: {filename}")
+                    return response
+                except Exception as e2:
+                    logger.error(f"✗ DOCX fallback also failed: {str(e2)}")
+                    return HttpResponse(f"Error: {str(e2)}", status=500)
+            # ↑↑↑ NEW CODE ENDS HERE ↑↑↑
+
+    except Exception as e:  # ← THIS STAYS (outer exception handler)
+        import traceback
+        error_msg = traceback.format_exc()
+        logger.error(f"✗ ERROR: {error_msg}")
+        return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+
 
 # for pdf preview also
 
