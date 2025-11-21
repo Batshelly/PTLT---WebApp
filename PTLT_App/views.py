@@ -2882,216 +2882,24 @@ def generate_attendance_docx(request, schedule_id):
                                         run.font.size = Pt(9)
 
         logger.error("✓ Template1 replacements complete")
+        # Instead of PDF conversion & merge, just save DOCX and return
 
-        # ======================================================================
-        # TEMPLATE 2 (students 41–60, matching student41_* … student60_* tags)
-        # ======================================================================
-        doc2 = Document(template2_path)
+        # Save first template doc to in-memory buffer
+        buffer = BytesIO()
+        doc1.save(buffer)
+        buffer.seek(0)
 
-        replacements2 = {
-            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
-            '{{faculty_name}}': (
-                f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}"
-                if class_schedule.professor else "TBA"
-            ),
-            '{{course}}': (
-                class_schedule.course_section.course_name
-                if class_schedule.course_section else ""
-            ),
-            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
-            '{{year_section}}': (
-                class_schedule.course_section.section_name
-                if class_schedule.course_section else ""
-            ),
-            '{{schedule}}': (
-                f"{class_schedule.days} "
-                f"{class_schedule.time_in.strftime('%H:%M')}-"
-                f"{class_schedule.time_out.strftime('%H:%M')}"
-            ),
-        }
+        # Prepare filename (sanitize if needed)
+        sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
+        filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
 
-        # Dates + professor times for Template 2
-        for i in range(1, 9):
-            if i - 1 < len(attendance_dates):
-                d = attendance_dates[i - 1]
-                replacements2[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                replacements2[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
-            else:
-                replacements2[f'{{{{date{i}}}}}'] = ''
-                replacements2[f'{{{{prof{i}}}}}'] = ''
-
-        replacements2['{{prof}}'] = (
-            prof_times.get(attendance_dates[0], '') if attendance_dates else ''
+        # Return the buffer as response with proper content type
+        response = HttpResponse(
+            buffer.read(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
-
-        # Student rows (41–60) – NOTE: keys now match template: student41_*, …, student60_*
-        time_cells2 = set()
-        for i in range(41, 61):
-            idx = i - 1  # 0-based index into students[]
-            if idx < len(students):
-                student = students[idx]
-                replacements2[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements2[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
-
-                for j in range(1, 9):
-                    key = f'{{{{student{i}_time{j}}}}}'
-                    if j - 1 < len(attendance_dates):
-                        d = attendance_dates[j - 1]
-                        if d in attendance_data[student.id]:
-                            att = attendance_data[student.id][d]
-                            if att['status'] in ['Present', 'Late']:
-                                time_in_str = (
-                                    att['time_in'].strftime('%H:%M')
-                                    if att['time_in'] else ''
-                                )
-                                time_out_str = (
-                                    att['time_out'].strftime('%H:%M')
-                                    if att['time_out'] else ''
-                                )
-                                if time_in_str and time_out_str:
-                                    replacements2[key] = f"{time_in_str} - {time_out_str}"
-                                    time_cells2.add(key)
-                                    continue
-                    replacements2[key] = ''
-            else:
-                # blank row
-                replacements2[f'{{{{student{i}_name}}}}'] = ''
-                replacements2[f'{{{{student{i}_sex}}}}'] = ''
-                for j in range(1, 9):
-                    replacements2[f'{{{{student{i}_time{j}}}}}'] = ''
-
-        logger.error(f"✓ Built {len(replacements2)} replacements for Template2")
-
-        # Apply replacements + font adjustment for Template 2
-        for table in doc2.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    cell_text = cell.text
-                    if '{{' in cell_text:
-                        for paragraph in cell.paragraphs:
-                            text = paragraph.text
-
-                            for key, value in replacements2.items():
-                                if key in text:
-                                    text = text.replace(key, value)
-
-                            if text != paragraph.text:
-                                paragraph.text = text
-
-                                if text.strip() in ['M', 'F']:
-                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
-
-                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(8)
-
-                                elif ' - ' in text and ':' in text:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(7)
-
-                                elif len(text) > 25:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(7)
-                                elif len(text) > 20:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(8)
-                                elif len(text) > 15:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
-
-        logger.error("✓ Template2 replacements complete")
-
-        # ======================================================================
-        # DOCX → PDF via LibreOffice, then merge PDFs
-        # ======================================================================
-                # ==================== DOCX → PDF via LibreOffice, then merge PDFs ====================
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
-            temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
-            
-            doc1.save(temp_docx1)
-            doc2.save(temp_docx2)
-            logger.error("✓ Temp DOCX files saved")
-            
-            try:
-                # ===== CONVERSION PHASE =====
-                pdf1 = convert_docx_to_pdf_railway(temp_docx1, tmpdir)
-                pdf2 = convert_docx_to_pdf_railway(temp_docx2, tmpdir)
-                
-                pdf1_size = os.path.getsize(pdf1)
-                pdf2_size = os.path.getsize(pdf2)
-                logger.error(f"PDF1: {pdf1_size} bytes, PDF2: {pdf2_size} bytes")
-                logger.error("✓ PDF conversion done")
-                
-                # ===== MERGE PHASE =====
-                if not os.path.exists(pdf1) or not os.path.exists(pdf2):
-                    raise FileNotFoundError("One or both PDF files not found after conversion")
-                
-                merger = PdfMerger()
-                merger.append(pdf1)
-                merger.append(pdf2)
-                
-                final_pdf = os.path.join(tmpdir, 'merged.pdf')
-                merger.write(final_pdf)
-                merger.close()
-                
-                logger.error("✓ PDFs merged successfully")
-                logger.error(f"✓ Opening final PDF: {final_pdf}")
-                
-
-                
-                sanitized_code = re.sub(r'[^a-zA-Z0-9]', '', str(class_schedule.course_code))
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                filename = f"attendance_{sanitized_code}_{timestamp}.pdf"
-
-                with open(final_pdf, 'rb') as f:
-                    pdf_data = f.read()
-                
-                logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")
-                
-                # Return as HttpResponse with PDF data in memory
-                response = HttpResponse(pdf_data, content_type='application/pdf')
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                
-                logger.error(f"✓ FileResponse created")
-                logger.error(f"✓ About to return PDF response")
-                
-                return response
-                
-            except Exception as e:
-                logger.error("PDF processing failed")
-                return HttpResponse("PDF generation failed. Check logs.", status=500)
-                logger.error(f"Full traceback: {traceback.format_exc()}") 
-                try:
-                    # Fallback: Return merged DOCX
-                    doc1.add_page_break()
-                    for paragraph in doc2.paragraphs:
-                        doc1.add_paragraph(paragraph.text)
-                    for table in doc2.tables:
-                        new_table = doc1.add_table(rows=len(table.rows), cols=len(table.columns))
-                        for i, row in enumerate(table.rows):
-                            for j, cell in enumerate(row.cells):
-                                new_table.rows[i].cells[j].text = cell.text
-                    
-                    buffer = BytesIO()
-                    doc1.save(buffer)
-                    buffer.seek(0)
-                    
-                    filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60_FALLBACK.docx"
-                    response = HttpResponse(
-                        buffer.read(),
-                        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                    )
-                    response['Content-Disposition'] = 'attachment; filename=' + filename
-                    logger.error(f"✓ Fallback: Returning merged DOCX: {filename}")
-                    return response
-                except Exception as e2:
-                    logger.error(f"✗ DOCX fallback also failed: {str(e2)}")
-                    return HttpResponse(f"Error: {str(e2)}", status=500)
-
-            
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
 
     except Exception as e:  # ← THIS STAYS (outer exception handler)
