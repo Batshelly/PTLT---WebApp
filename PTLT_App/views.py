@@ -3006,68 +3006,29 @@ def generate_attendance_docx(request, schedule_id):
         # ======================================================================
         # DOCX → PDF via LibreOffice, then merge PDFs
         # ======================================================================
+                # ==================== DOCX → PDF via LibreOffice, then merge PDFs ====================
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
             temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
-
+            
             doc1.save(temp_docx1)
             doc2.save(temp_docx2)
             logger.error("✓ Temp DOCX files saved")
-
-            try:
-                pdf1 = convert_docx_to_pdf_railway(temp_docx1, tmpdir)
-                pdf2 = convert_docx_to_pdf_railway(temp_docx2, tmpdir)
-                # Validate PDF sizes
-                pdf1_size = os.path.getsize(pdf1)
-                pdf2_size = os.path.getsize(pdf2)
-                logger.error(f"PDF1: {pdf1_size} bytes, PDF2: {pdf2_size} bytes")
-
-
-                
-                logger.error("✓ PDF conversion done")
-            except Exception as e:
-                logger.error(f"✗ PDF conversion failed: {e}")
-                buffer = BytesIO()
-                doc1.save(buffer)
-                buffer.seek(0)
-                filename = f"Attendance_{class_schedule.course_code}{date_range_str}.docx"
-                response = HttpResponse(
-                    buffer.read(),
-                    content_type=(
-                        'application/vnd.openxmlformats-'
-                        'officedocument.wordprocessingml.document'
-                    ),
-                )
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                return response
-
-                with tempfile.TemporaryDirectory() as tmpdir:
-                temp_docx1 = os.path.join(tmpdir, 'attendance_1.docx')
-                temp_docx2 = os.path.join(tmpdir, 'attendance_2.docx')
-                
-                doc1.save(temp_docx1)
-                doc2.save(temp_docx2)
-                logger.error("✓ Temp DOCX files saved")
             
             try:
                 # ===== CONVERSION PHASE =====
-                # Convert both DOCX files to PDF
                 pdf1 = convert_docx_to_pdf_railway(temp_docx1, tmpdir)
                 pdf2 = convert_docx_to_pdf_railway(temp_docx2, tmpdir)
                 
-                # Validate PDF sizes
                 pdf1_size = os.path.getsize(pdf1)
                 pdf2_size = os.path.getsize(pdf2)
                 logger.error(f"PDF1: {pdf1_size} bytes, PDF2: {pdf2_size} bytes")
-                
                 logger.error("✓ PDF conversion done")
                 
                 # ===== MERGE PHASE =====
-                # Validate PDFs exist before merge
                 if not os.path.exists(pdf1) or not os.path.exists(pdf2):
                     raise FileNotFoundError("One or both PDF files not found after conversion")
                 
-                # Merge PDFs
                 merger = PdfMerger()
                 merger.append(pdf1)
                 merger.append(pdf2)
@@ -3079,21 +3040,20 @@ def generate_attendance_docx(request, schedule_id):
                 logger.error("✓ PDFs merged successfully")
                 
                 # ===== RETURN PHASE =====
-                # Read and return merged PDF
                 with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
                 
-                filename = f"Attendance_{class_schedule.course_code}{date_range_str}_FALLBACK.docx"
+                filename = f"Attendance_{class_schedule.course_code}{date_range_str}_students1-60.pdf"
+                logger.error(f"✓ Complete: {filename}")
+                
                 response = HttpResponse(pdf_data, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                
                 return response
-            
+                
             except Exception as e:
-                # Fallback: Return merged DOCX if PDF fails
                 logger.error(f"✗ PDF processing failed: {str(e)}")
                 try:
-                    # Merge DOCX as fallback
+                    # Fallback: Return merged DOCX
                     doc1.add_page_break()
                     for paragraph in doc2.paragraphs:
                         doc1.add_paragraph(paragraph.text)
@@ -3118,7 +3078,9 @@ def generate_attendance_docx(request, schedule_id):
                 except Exception as e2:
                     logger.error(f"✗ DOCX fallback also failed: {str(e2)}")
                     return HttpResponse(f"Error: {str(e2)}", status=500)
-            # ↑↑↑ NEW CODE ENDS HERE ↑↑↑
+
+            
+
 
     except Exception as e:  # ← THIS STAYS (outer exception handler)
         import traceback
