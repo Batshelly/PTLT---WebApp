@@ -3046,12 +3046,14 @@ def generate_attendance_docx(request, schedule_id):
                 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
                 filename = f"attendance_{sanitized_code}_{timestamp}.pdf"
 
-                response = FileResponse(
-                    open(final_pdf, 'rb'),
-                    as_attachment=True,
-                    filename=filename,
-                    content_type='application/pdf',
-                )
+               with open(final_pdf, 'rb') as f:
+                    pdf_data = f.read()
+                
+                logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")
+                
+                # Return as HttpResponse with PDF data in memory
+                response = HttpResponse(pdf_data, content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
                 
                 logger.error(f"✓ FileResponse created")
                 logger.error(f"✓ About to return PDF response")
