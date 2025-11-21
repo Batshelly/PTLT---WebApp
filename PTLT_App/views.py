@@ -3046,7 +3046,7 @@ def generate_attendance_docx(request, schedule_id):
                 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
                 filename = f"attendance_{sanitized_code}_{timestamp}.pdf"
 
-               with open(final_pdf, 'rb') as f:
+                with open(final_pdf, 'rb') as f:
                     pdf_data = f.read()
                 
                 logger.error(f"✓ PDF data read: {len(pdf_data)} bytes")
