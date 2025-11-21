@@ -3058,7 +3058,8 @@ def generate_attendance_docx(request, schedule_id):
                 return response
                 
             except Exception as e:
-                logger.error(f"✗ PDF processing failed: {str(e)}")
+                logger.error("PDF processing failed")
+                return HttpResponse("PDF generation failed. Check logs.", status=500)
                 logger.error(f"Full traceback: {traceback.format_exc()}") 
                 try:
                     # Fallback: Return merged DOCX
