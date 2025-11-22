@@ -2844,6 +2844,54 @@ def generate_attendance_docx(request, schedule_id):
     logger = logging.getLogger(__name__)
     logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
 
+    # 🔥 HELPER FUNCTION: Apply replacements with font adjustments
+    def apply_replacements_to_doc(doc, replacements):
+        """Apply replacements with font adjustments for all cell types."""
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if '{{' in cell.text:
+                        for paragraph in cell.paragraphs:
+                            text = paragraph.text
+                            for key, value in replacements.items():
+                                if key in text:
+                                    text = text.replace(key, str(value))
+                            if text != paragraph.text:
+                                paragraph.text = text
+                                
+                                # Font size adjustments
+                                # Professor times (format: HH:MM-HH:MM)
+                                if ':' in text and '-' in text and len(text) <= 11 and text.count(':') == 2:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                        
+                                # Sex (M/F)
+                                elif text.strip() in ['M', 'F']:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+                                        
+                                # Dates (MM/DD/YYYY format)
+                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                        
+                                # Student attendance times (HH:MM - HH:MM with space)
+                                elif ' - ' in text and ':' in text:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                        
+                                # Long text
+                                elif len(text) > 25:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif len(text) > 20:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                elif len(text) > 15:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+
     try:
         # Parse date range
         date_range = request.GET.get('date_range')
@@ -2891,7 +2939,7 @@ def generate_attendance_docx(request, schedule_id):
                 if len(students) >= 60:
                     break
 
-        logger.error(f"✓ {len(students)} students")
+        logger.error(f"✓ {len(students)} students total")
 
         # Get dates & attendance data
         attendance_dates = list(
@@ -2934,63 +2982,13 @@ def generate_attendance_docx(request, schedule_id):
             if rec:
                 pti = rec.professor_time_in
                 pto = rec.professor_time_out
-                logger.error(f"PROF DEBUG: date={d} pti={pti} pto={pto}")
                 if pti and pto:
                     prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
             prof_times[d] = prof_str
 
         students_template1 = students[0:40]
         students_template2 = students[40:60]
-        logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
-
-        # 🔥 HELPER FUNCTION: Apply replacements to document
-        def apply_replacements_to_doc(doc, replacements):
-            """Apply replacements with font adjustments for all cell types."""
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        if '{{' in cell.text:
-                            for paragraph in cell.paragraphs:
-                                text = paragraph.text
-                                for key, value in replacements.items():
-                                    if key in text:
-                                        text = text.replace(key, str(value))
-                                if text != paragraph.text:
-                                    paragraph.text = text
-                                    
-                                    # Font size adjustments
-                                    
-                                    # Professor times (format: HH:MM-HH:MM)
-                                    if ':' in text and '-' in text and len(text) <= 11:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(7)
-                                            
-                                    # Sex (M/F)
-                                    elif text.strip() in ['M', 'F']:
-                                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(9)
-                                            
-                                    # Dates (MM/DD/YYYY format)
-                                    elif '/' in text and len(text) <= 10 and text[0].isdigit():
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(8)
-                                            
-                                    # Student attendance times (HH:MM - HH:MM)
-                                    elif ' - ' in text and ':' in text:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(7)
-                                            
-                                    # Long text
-                                    elif len(text) > 25:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(7)
-                                    elif len(text) > 20:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(8)
-                                    elif len(text) > 15:
-                                        for run in paragraph.runs:
-                                            run.font.size = Pt(9)
+        logger.error(f"✓ Template1: {len(students_template1)} students, Template2: {len(students_template2)} students")
 
         # ======================================================================
         # TEMPLATE 1 (students 1–40) - WITH PROFESSOR TIMES
@@ -3026,12 +3024,10 @@ def generate_attendance_docx(request, schedule_id):
                 replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
                 prof_time_value = prof_times.get(d, '')
                 replacements1[f'{{{{prof{i}}}}}'] = prof_time_value
-                logger.error(f"prof{i} ({d}): '{prof_time_value}'")
             else:
                 replacements1[f'{{{{date{i}}}}}'] = ''
                 replacements1[f'{{{{prof{i}}}}}'] = ''
 
-        # Generic {{prof}}
         replacements1['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
         # Student rows (1–40)
@@ -3065,7 +3061,7 @@ def generate_attendance_docx(request, schedule_id):
         logger.error("✓ Template1 replacements complete")
 
         # ======================================================================
-        # TEMPLATE 2 (students 41–60) - WITH PROFESSOR TIMES (🔥 SAME AS TEMPLATE 1)
+        # TEMPLATE 2 (students 41–60) - WITH PROFESSOR TIMES
         # ======================================================================
         doc2 = Document(template2_path)
 
@@ -3091,27 +3087,25 @@ def generate_attendance_docx(request, schedule_id):
             ),
         }
 
-        # 🔥 Dates + professor times for Template 2 (SAME as Template 1)
+        # 🔥 Dates + professor times for Template 2
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
                 replacements2[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
                 prof_time_value = prof_times.get(d, '')
                 replacements2[f'{{{{prof{i}}}}}'] = prof_time_value
-                logger.error(f"prof{i} ({d}): '{prof_time_value}'")
             else:
                 replacements2[f'{{{{date{i}}}}}'] = ''
                 replacements2[f'{{{{prof{i}}}}}'] = ''
 
-        # Generic {{prof}} (SAME)
         replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
-        # 🔥 Student rows (41–60 → becomes 1–20 in Template 2)
+        # 🔥 FIXED: Student rows (41–60 → becomes 1–20 in Template 2)
         for i in range(1, 21):
-            student_idx = 40 + i - 1  # Maps to students 41-60
-            
-            if student_idx < len(students):
-                student = students[student_idx]
+            if i - 1 < len(students_template2):  # ✅ Use students_template2
+                student = students_template2[i - 1]  # ✅ Direct index
+                logger.error(f"Template2 row {i}: {student.last_name}, {student.first_name}")
+                
                 replacements2[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
                 replacements2[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
 
@@ -3127,9 +3121,9 @@ def generate_attendance_docx(request, schedule_id):
                                 if time_in_str and time_out_str:
                                     replacements2[key] = f"{time_in_str} - {time_out_str}"
                                     continue
-                    replacements2[key] = ''  # 🔥 Clear cell if no data
+                    replacements2[key] = ''
             else:
-                # 🔥 No student - clear all cells for this row
+                # No student - clear row
                 replacements2[f'{{{{student{i}_name}}}}'] = ''
                 replacements2[f'{{{{student{i}_sex}}}}'] = ''
                 for j in range(1, 9):
