@@ -1218,11 +1218,28 @@ from django.views.decorators.http import require_http_methods
 from .models import Account, ClassSchedule, CourseSection, AttendanceRecord
 from datetime import datetime
 
+# 🔥 HELPER FUNCTION: Parse time from CSV
+def parse_time_from_csv(time_str):
+    """Parse time from CSV in formats: HH:MM or HH:MM:SS. Returns time object or None."""
+    if not time_str or str(time_str).strip().lower() in ['nan', 'none', '']:
+        return None
+    
+    time_str = str(time_str).strip()
+    
+    for time_format in ['%H:%M:%S', '%H:%M']:
+        try:
+            return datetime.strptime(time_str, time_format).time()
+        except ValueError:
+            continue
+    
+    return None
+
+
 @csrf_exempt
 @instructor_or_admin_required
 @require_http_methods(["POST"])
 def import_class_schedule(request):
-    """Import attendance records from biometric CSV export - EXACT MATCH ONLY"""
+    """Import attendance records from biometric CSV export with professor times."""
     
     if 'csv_file' not in request.FILES:
         return JsonResponse({
@@ -1245,13 +1262,15 @@ def import_class_schedule(request):
             'skipped': 0,
             'student_not_found': 0,
             'course_not_found': 0,
+            'professor_mismatch': 0,
             'empty_rows': 0,
             'errors': []
         }
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # ✨ EXTRACT FIELDS FROM YOUR CSV FORMAT
+                # Extract all fields
+                professor_user_id = row.get('professor_user_id', '').strip()
                 course_code = row.get('course_code', '').strip()
                 student_id = row.get('student_id', '').strip()
                 attendance_date_str = row.get('attendance_date', '').strip()
@@ -1259,173 +1278,195 @@ def import_class_schedule(request):
                 attendance_time_out_str = row.get('attendance_time_out', '').strip()
                 attendance_status = row.get('attendance_status', 'Present').strip().title()
                 
-                # ✨ SKIP COMPLETELY EMPTY ROWS
+                # 🔥 Extract professor times (optional)
+                professor_time_in_str = row.get('professor_time_in', '').strip()
+                professor_time_out_str = row.get('professor_time_out', '').strip()
+                
+                # Skip completely empty rows
                 if not any([course_code, student_id, attendance_date_str, attendance_time_in_str]):
                     results['empty_rows'] += 1
                     continue
                 
-                # ✨ VALIDATE REQUIRED FIELDS
+                # 🔥 VALIDATE: professor_user_id is REQUIRED
+                if not professor_user_id:
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(f"Line {line_num}: Missing professor_user_id")
+                    results['skipped'] += 1
+                    continue
+                
+                # Validate other required fields
                 if not all([course_code, student_id, attendance_date_str, attendance_time_in_str]):
                     missing_fields = []
                     if not course_code: missing_fields.append('course_code')
                     if not student_id: missing_fields.append('student_id')
                     if not attendance_date_str: missing_fields.append('attendance_date')
                     if not attendance_time_in_str: missing_fields.append('attendance_time_in')
-                    
                     results['errors'].append(f"Line {line_num}: Missing fields: {', '.join(missing_fields)}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 1: VERIFY COURSE CODE EXISTS
+                # STEP 1: Verify course exists
                 try:
                     class_schedule = ClassSchedule.objects.get(course_code=course_code)
                 except ClassSchedule.DoesNotExist:
                     results['course_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Course '{course_code}' not found")
+                    results['errors'].append(f"Line {line_num}: Course {course_code} not found")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 2: VERIFY STUDENT EXISTS (EXACT MATCH ONLY - NO FLEXIBLE MATCHING)
+                # 🔥 STEP 2: VERIFY PROFESSOR MATCH (REQUIRED)
+                if not class_schedule.professor:
+                    # Course has no professor assigned
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(
+                        f"Line {line_num}: Course {course_code} has no professor assigned in database"
+                    )
+                    results['skipped'] += 1
+                    continue
+                
+                if str(class_schedule.professor.user_id) != professor_user_id:
+                    # Professor doesn't match
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(
+                        f"Line {line_num}: Professor mismatch for {course_code}. "
+                        f"Database: {class_schedule.professor.user_id}, CSV: {professor_user_id}"
+                    )
+                    results['skipped'] += 1
+                    continue
+                
+                # STEP 3: Verify student exists
                 try:
                     student = Account.objects.get(user_id=student_id, role='Student')
                 except Account.DoesNotExist:
                     results['student_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found (exact match required)")
+                    results['errors'].append(f"Line {line_num}: Student {student_id} not found")
                     results['skipped'] += 1
                     continue
                 except Account.MultipleObjectsReturned:
                     results['student_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Multiple students found with ID '{student_id}'")
+                    results['errors'].append(f"Line {line_num}: Multiple students with ID {student_id}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 3: PARSE DATE & TIMES (FLEXIBLE FORMATS)
-                try:
-                    # Parse date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
-                    attendance_date = None
-                    for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']:
-                        try:
-                            attendance_date = datetime.strptime(attendance_date_str, date_format).date()
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if not attendance_date:
-                        raise ValueError(f"Date '{attendance_date_str}' must be YYYY-MM-DD, DD/MM/YYYY, or MM/DD/YYYY")
-                    
-                    # Parse time_in (supports H:M and H:M:S)
-                    attendance_time_in = None
-                    for time_format in ['%H:%M:%S', '%H:%M']:
-                        try:
-                            attendance_time_in = datetime.strptime(attendance_time_in_str, time_format).time()
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if not attendance_time_in:
-                        raise ValueError(f"Time '{attendance_time_in_str}' must be HH:MM or HH:MM:SS")
-                    
-                    # Parse time_out (optional)
-                    attendance_time_out = None
-                    if attendance_time_out_str:
-                        for time_format in ['%H:%M:%S', '%H:%M']:
-                            try:
-                                attendance_time_out = datetime.strptime(attendance_time_out_str, time_format).time()
-                                break
-                            except ValueError:
-                                continue
-                    
-                except ValueError as e:
-                    results['errors'].append(f"Line {line_num}: Invalid date/time - {str(e)}")
-                    results['skipped'] += 1
-                    continue
+                # Parse date
+                attendance_date = None
+                for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%Y/%d/%m']:
+                    try:
+                        attendance_date = datetime.strptime(attendance_date_str, date_format).date()
+                        break
+                    except ValueError:
+                        continue
                 
-                # ✨ STEP 4: NORMALIZE STATUS
+                if not attendance_date:
+                    raise ValueError(f"Invalid date format: {attendance_date_str}")
+                
+                # Parse times
+                attendance_time_in = parse_time_from_csv(attendance_time_in_str)
+                if not attendance_time_in:
+                    raise ValueError(f"Invalid time_in format: {attendance_time_in_str}")
+                
+                attendance_time_out = parse_time_from_csv(attendance_time_out_str) if attendance_time_out_str else None
+                
+                # 🔥 Parse professor times (optional)
+                professor_time_in = parse_time_from_csv(professor_time_in_str)
+                professor_time_out = parse_time_from_csv(professor_time_out_str)
+                
+                # Normalize status
                 status_map = {
                     'LATE': 'Late',
                     'PRESENT': 'Present',
                     'ABSENT': 'Absent',
                     'Late': 'Late',
                     'Present': 'Present',
-                    'Absent': 'Absent'
+                    'Absent': 'Absent',
                 }
                 normalized_status = status_map.get(attendance_status, 'Present')
                 
-                # ✨ STEP 5: CREATE OR UPDATE ATTENDANCE RECORD
-                attendance_record, created = AttendanceRecord.objects.update_or_create(
-                    class_schedule=class_schedule,
-                    student=student,
-                    date=attendance_date,
-                    defaults={
-                        'professor': class_schedule.professor,
-                        'course_section': class_schedule.course_section,
-                        'time_in': attendance_time_in,
-                        'time_out': attendance_time_out,
-                        'status': normalized_status,
-                        'fingerprint_data': b'',
-                    }
-                )
-                
-                if created:
-                    results['attendance_created'] += 1
-                else:
+                # STEP 4: Create or update record (professor already validated to match)
+                try:
+                    # Try to get existing record
+                    attendance_record = AttendanceRecord.objects.get(
+                        class_schedule=class_schedule,
+                        student=student,
+                        date=attendance_date
+                    )
+                    
+                    # Record exists - UPDATE it
+                    attendance_record.time_in = attendance_time_in
+                    attendance_record.time_out = attendance_time_out
+                    attendance_record.status = normalized_status
+                    
+                    # 🔥 Update professor times ONLY if provided in CSV
+                    if professor_time_in:
+                        attendance_record.professor_time_in = professor_time_in
+                    if professor_time_out:
+                        attendance_record.professor_time_out = professor_time_out
+                    
+                    attendance_record.save()
                     results['attendance_updated'] += 1
-                
+                    
+                except AttendanceRecord.DoesNotExist:
+                    # Record doesn't exist - CREATE new one
+                    attendance_record = AttendanceRecord.objects.create(
+                        class_schedule=class_schedule,
+                        student=student,
+                        date=attendance_date,
+                        professor=class_schedule.professor,
+                        course_section=class_schedule.course_section,
+                        time_in=attendance_time_in,
+                        time_out=attendance_time_out,
+                        status=normalized_status,
+                        fingerprint_data=b'',
+                        professor_time_in=professor_time_in,
+                        professor_time_out=professor_time_out,
+                    )
+                    results['attendance_created'] += 1
+                    
             except Exception as e:
                 results['errors'].append(f"Line {line_num}: {str(e)}")
                 results['skipped'] += 1
         
-        # ✨ DETERMINE STATUS
+        # Determine status
         total_processed = results['attendance_created'] + results['attendance_updated']
         
-        if total_processed == 0:
-            if results['skipped'] > 0:
-                status_code = 'all_skipped'
-            else:
-                status_code = 'failed'
-        elif results['skipped'] == 0:
-            status_code = 'ok'
+        if total_processed > 0:
+            status = 'ok' if results['skipped'] == 0 else 'partial'
+        elif results['skipped'] > 0:
+            status = 'all_skipped'
         else:
-            status_code = 'partial'
-        
-        # ✨ BUILD SUMMARY MESSAGE
-        message_parts = []
-        if results['student_not_found'] > 0:
-            message_parts.append(f"{results['student_not_found']} students not found")
-        if results['course_not_found'] > 0:
-            message_parts.append(f"{results['course_not_found']} courses not found")
-        if results['empty_rows'] > 0:
-            message_parts.append(f"{results['empty_rows']} empty rows skipped")
-        
-        summary_message = '; '.join(message_parts) if message_parts else 'All records processed successfully'
-        
-        print(f"✅ Import completed: {total_processed} records processed, {results['skipped']} skipped")
+            status = 'error'
         
         return JsonResponse({
-            'status': status_code,
+            'status': status,
             'imported': total_processed,
             'attendance_created': results['attendance_created'],
             'attendance_updated': results['attendance_updated'],
             'skipped': results['skipped'],
             'student_not_found': results['student_not_found'],
             'course_not_found': results['course_not_found'],
+            'professor_mismatch': results['professor_mismatch'],
             'empty_rows': results['empty_rows'],
-            'message': summary_message,
-            'errors': results['errors'][:20]
+            'errors': results['errors'][:50],
+            'message': (
+                f"✅ Created: {results['attendance_created']}, "
+                f"Updated: {results['attendance_updated']}, "
+                f"Skipped: {results['skipped']} "
+                f"(Prof mismatch: {results['professor_mismatch']})"
+            )
         })
         
     except Exception as e:
-        print(f"❌ Error in import: {str(e)}")
         import traceback
-        traceback.print_exc()
-        
         return JsonResponse({
             'status': 'error',
-            'message': str(e),
+            'message': f'Error processing CSV: {str(e)}',
+            'traceback': traceback.format_exc(),
             'imported': 0,
-            'skipped': 0,
-            'errors': [f'Server error: {str(e)}']
+            'errors': [str(e)]
         }, status=500)
+
+
+    
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
     """Import class schedule from PDF with duplicate detection and Unicode support"""
