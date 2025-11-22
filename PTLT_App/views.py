@@ -2802,12 +2802,12 @@ from django.http import HttpResponse
 from django.conf import settings
 
 @instructor_or_admin_required
-def generate_attendance_docx(request, scheduleid):
+def generate_attendance_docx(request, schedule_id):
     """
     Generate DOCX & PDF, 60 students (Template1 & Template2) with professor times.
     """
     logger = logging.getLogger(__name__)
-    logger.error(f"PDF Download Started for scheduleid: {scheduleid}")
+    logger.error(f"PDF Download Started for schedule_id: {schedule_id}")
     
     try:
         # ----------------- Load templates -----------------
@@ -2820,7 +2820,7 @@ def generate_attendance_docx(request, scheduleid):
         logger.error("Both templates loaded")
         
         # ----------------- Get class schedule -----------------
-        classschedule = ClassSchedule.objects.get(id=scheduleid)
+        classschedule = ClassSchedule.objects.get(id=schedule_id)
         
         # ----------------- Get date range from request -----------------
         daterange = request.GET.get('daterange', '')
