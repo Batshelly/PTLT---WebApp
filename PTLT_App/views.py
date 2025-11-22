@@ -2823,7 +2823,7 @@ def generate_attendance_docx(request, schedule_id):
         classschedule = ClassSchedule.objects.get(id=schedule_id)
         
         # ----------------- Get date range from request -----------------
-        daterange = request.GET.get('daterange', '')
+        date_range = request.GET.get('daterange', '')
         
         if not daterange:
             return HttpResponse("No date range provided", status=400)
