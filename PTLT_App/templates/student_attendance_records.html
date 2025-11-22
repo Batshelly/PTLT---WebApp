@@ -290,21 +290,13 @@
                             <th colspan="8">Status</th>
                         </tr>
                         <tr>
-                            <th rowspan="2">No.</th>
-                            <th rowspan="2">Name</th>
-                            <th rowspan="2">Sex (M/F)</th>
-                            <th colspan="8">Status</th>
-                            </tr>
-                            <tr>
-                            {% for date, prof in date_prof_pairs %}
-                                <th>
-                                {{ date }}<br>
-                                <span style="font-size:10px;">
-                                    {% if prof %}{{ prof }}{% endif %}
-                                </span>
-                                </th>
-                            {% endfor %}
-                            </tr>
+                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
+                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
+                        </tr>
+                        <tr class="bg-white" id="dateHeaderRow">
+                            <th></th><th></th><th></th><th></th>
+                            <th></th><th></th><th></th><th></th>
+                        </tr>
                     </thead>
                     <tbody id="attendanceTableBody"></tbody>
                 </table>
