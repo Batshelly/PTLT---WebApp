@@ -1,6 +1,7 @@
 let selectedClassId = null;
 let selectedDateRange = null;
 
+
 // Initialize empty table
 function initEmptyTable() {
     let html = '';
@@ -10,6 +11,7 @@ function initEmptyTable() {
     document.getElementById('attendanceTableBody').innerHTML = html;
 }
 initEmptyTable();
+
 
 // Subject change
 document.getElementById('subjectSelect').addEventListener('change', function() {
@@ -62,6 +64,7 @@ document.getElementById('subjectSelect').addEventListener('change', function() {
         });
 });
 
+
 // Date range change
 document.getElementById('dateRangeSelect').addEventListener('change', function() {
     selectedDateRange = this.value;
@@ -109,6 +112,7 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
         });
 });
 
+
 function clearTable() {
     document.getElementById('classSubject').textContent = '[Subject]';
     document.getElementById('classFaculty').textContent = '[Faculty]';
@@ -121,6 +125,7 @@ function clearTable() {
     document.getElementById('noRecordsMsg').style.display = 'none';
     document.getElementById('studentCount').style.display = 'none';
 }
+
 
 function previewDocxFile() {
     if (!selectedClassId) { 
@@ -137,7 +142,7 @@ function previewDocxFile() {
     // ✅ USE PDF URL (not Office viewer)
     let pdfUrl = `/attendance/pdf/${selectedClassId}/`;
     if (selectedDateRange) {
-        pdfUrl += `?date_range=${selectedDateRange}`;
+        pdfUrl += `?daterange=${selectedDateRange}`;  // 🔥 CHANGED: Removed underscore
     }
     
     const iframe = document.getElementById('docPreviewFrame');
@@ -149,10 +154,11 @@ function previewDocxFile() {
     };
 }
 
+
 function downloadDocx() {
     if (!selectedClassId) { alert('Select a class first!'); return; }
     let url = `/attendance/docx/${selectedClassId}/`;
-    if (selectedDateRange) url += `?date_range=${selectedDateRange}`;
+    if (selectedDateRange) url += `?daterange=${selectedDateRange}`;  // 🔥 CHANGED: Removed underscore
     const a = document.createElement('a');
     a.href = url;
     a.click();
