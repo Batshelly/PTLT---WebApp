@@ -2785,7 +2785,35 @@ def clear_students(request):
             'status': 'error',
             'message': str(e)
         }, status=500)
+
+
+def convert_docx_to_pdf_railway(docx_io):
+    """Convert DOCX BytesIO to PDF BytesIO using LibreOffice."""
+    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_docx:
+        tmp_docx.write(docx_io.read())
+        tmp_docx_path = tmp_docx.name
     
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            subprocess.run([
+                'libreoffice',
+                '--headless',
+                '--convert-to', 'pdf',
+                '--outdir', tmp_dir,
+                tmp_docx_path
+            ], timeout=60, check=True, env={'HOME': '/tmp'})
+            
+            pdf_filename = os.path.splitext(os.path.basename(tmp_docx_path))[0] + '.pdf'
+            pdf_path = os.path.join(tmp_dir, pdf_filename)
+            
+            with open(pdf_path, 'rb') as pdf_file:
+                pdf_io = BytesIO(pdf_file.read())
+            
+            return pdf_io
+            
+        finally:
+            if os.path.exists(tmp_docx_path):
+                os.remove(tmp_docx_path)
 
 # for Docx Download
 from io import BytesIO
@@ -2803,10 +2831,10 @@ from django.conf import settings
 
 
 @instructor_or_admin_required
-def generate_attendance_docx(request, scheduleid):
+def generate_attendance_docx(request, schedule_id):
     """Generate DOCX & PDF, 60 students (Template1 & Template2) with professor times."""
     logger = logging.getLogger(__name__)
-    logger.error(f"PDF Download Started for scheduleid: {scheduleid}")
+    logger.error(f"PDF Download Started for schedule_id: {schedule_id}")
     
     try:
         # Load templates
@@ -2818,7 +2846,7 @@ def generate_attendance_docx(request, scheduleid):
         
         logger.error("Both templates loaded")
         
-        classschedule = ClassSchedule.objects.get(id=scheduleid)
+        classschedule = ClassSchedule.objects.get(id=schedule_id)
         
         # Get date range
         daterange = request.GET.get('daterange', '')
@@ -3083,32 +3111,3 @@ def replace_placeholders(doc, replacements, timecells):
                             for run in paragraph.runs:
                                 run.font.size = Pt(8)
                             break
-
-
-def convert_docx_to_pdf_railway(docx_io):
-    """Convert DOCX BytesIO to PDF BytesIO using LibreOffice."""
-    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_docx:
-        tmp_docx.write(docx_io.read())
-        tmp_docx_path = tmp_docx.name
-    
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        try:
-            subprocess.run([
-                'libreoffice',
-                '--headless',
-                '--convert-to', 'pdf',
-                '--outdir', tmp_dir,
-                tmp_docx_path
-            ], timeout=60, check=True, env={'HOME': '/tmp'})
-            
-            pdf_filename = os.path.splitext(os.path.basename(tmp_docx_path))[0] + '.pdf'
-            pdf_path = os.path.join(tmp_dir, pdf_filename)
-            
-            with open(pdf_path, 'rb') as pdf_file:
-                pdf_io = BytesIO(pdf_file.read())
-            
-            return pdf_io
-            
-        finally:
-            if os.path.exists(tmp_docx_path):
-                os.remove(tmp_docx_path)
