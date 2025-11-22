@@ -2840,7 +2840,7 @@ import tempfile
 
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX, 60 students (Template1 + Template2) with professor times on Template1."""
+    """Generate DOCX, students 1-40 with professor times."""
     logger = logging.getLogger(__name__)
     logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
 
@@ -2849,10 +2849,7 @@ def generate_attendance_docx(request, schedule_id):
         date_range = request.GET.get('date_range')
         if not date_range:
             logger.error("✗ No date range provided")
-            return HttpResponse(
-                '<h3>Date Range Required</h3><p>Please select a date range.</p>',
-                status=400
-            )
+            return HttpResponse('<h3>Date Range Required</h3>', status=400)
 
         try:
             logger.error(f"Raw date_range: '{date_range}'")
@@ -2865,18 +2862,11 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(f"✓ Parsed: {start_date} to {end_date}")
         except Exception as e:
             logger.error(f"✗ Invalid date: {str(e)}")
-            return HttpResponse(
-                f'<h3>Invalid Date Range</h3><p>{str(e)}</p>',
-                status=400
-            )
+            return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
 
         # Load templates
-        template1_path = os.path.join(
-            settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx'
-        )
-        template2_path = os.path.join(
-            settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx'
-        )
+        template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
 
         if not os.path.exists(template1_path) or not os.path.exists(template2_path):
             return HttpResponse("Templates not found", status=500)
@@ -2935,13 +2925,11 @@ def generate_attendance_docx(request, schedule_id):
                 'time_in': record.time_in,
                 'time_out': record.time_out,
                 'status': record.status,
-                'professor_time_in': record.professor_time_in,
-                'professor_time_out': record.professor_time_out,
             }
 
         logger.error(f"✓ {len(attendance_dates)} dates")
 
-        # 🔥 BUILD PROFESSOR TIMES DICTIONARY
+        # 🔥 BUILD PROFESSOR TIMES
         prof_times = {}
         for d in attendance_dates:
             prof_str = ''
@@ -2957,13 +2945,11 @@ def generate_attendance_docx(request, schedule_id):
                 if pti and pto:
                     prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
                 else:
-                    logger.error(f"✗ Prof times NULL for {d} ({pti}, {pto})")
-            else:
-                logger.error(f"✗ NO AttendanceRecord found for {d}")
+                    logger.error(f"✗ Prof times NULL for {d}")
             prof_times[d] = prof_str
 
-        students_template1 = students[0:40]   # 1–40
-        students_template2 = students[40:60]  # 41–60
+        students_template1 = students[0:40]
+        students_template2 = students[40:60]
         logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
 
         # ======================================================================
@@ -3011,7 +2997,6 @@ def generate_attendance_docx(request, schedule_id):
         )
 
         # Student rows (1–40)
-        time_cells1 = set()
         for i in range(1, 41):
             if i - 1 < len(students_template1):
                 student = students_template1[i - 1]
@@ -3025,17 +3010,10 @@ def generate_attendance_docx(request, schedule_id):
                         if d in attendance_data[student.id]:
                             att = attendance_data[student.id][d]
                             if att['status'] in ['Present', 'Late']:
-                                time_in_str = (
-                                    att['time_in'].strftime('%H:%M')
-                                    if att['time_in'] else ''
-                                )
-                                time_out_str = (
-                                    att['time_out'].strftime('%H:%M')
-                                    if att['time_out'] else ''
-                                )
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                 if time_in_str and time_out_str:
                                     replacements1[key] = f"{time_in_str} - {time_out_str}"
-                                    time_cells1.add(key)
                                     continue
                     replacements1[key] = ''
             else:
@@ -3050,18 +3028,14 @@ def generate_attendance_docx(request, schedule_id):
         for table in doc1.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    cell_text = cell.text
-                    if '{{' in cell_text:
+                    if '{{' in cell.text:
                         for paragraph in cell.paragraphs:
                             text = paragraph.text
-
                             for key, value in replacements1.items():
                                 if key in text:
                                     text = text.replace(key, str(value))
-
                             if text != paragraph.text:
                                 paragraph.text = text
-
                                 # Font size adjustments
                                 if text.strip() in ['M', 'F']:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -3121,7 +3095,6 @@ def generate_attendance_docx(request, schedule_id):
                 replacements2[f'{{{{date{i}}}}}'] = ''
 
         # Student rows (41–60 → becomes 1–20 in replacements)
-        time_cells2 = set()
         for i in range(1, 21):
             if 40 + i - 1 < len(students):
                 student = students[40 + i - 1]
@@ -3135,17 +3108,10 @@ def generate_attendance_docx(request, schedule_id):
                         if d in attendance_data[student.id]:
                             att = attendance_data[student.id][d]
                             if att['status'] in ['Present', 'Late']:
-                                time_in_str = (
-                                    att['time_in'].strftime('%H:%M')
-                                    if att['time_in'] else ''
-                                )
-                                time_out_str = (
-                                    att['time_out'].strftime('%H:%M')
-                                    if att['time_out'] else ''
-                                )
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                 if time_in_str and time_out_str:
                                     replacements2[key] = f"{time_in_str} - {time_out_str}"
-                                    time_cells2.add(key)
                                     continue
                     replacements2[key] = ''
             else:
@@ -3156,23 +3122,18 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error(f"✓ Built {len(replacements2)} replacements for Template2")
 
-        # Apply replacements with font adjustments
+        # Apply replacements
         for table in doc2.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    cell_text = cell.text
-                    if '{{' in cell_text:
+                    if '{{' in cell.text:
                         for paragraph in cell.paragraphs:
                             text = paragraph.text
-
                             for key, value in replacements2.items():
                                 if key in text:
                                     text = text.replace(key, str(value))
-
                             if text != paragraph.text:
                                 paragraph.text = text
-
-                                # Font size adjustments
                                 if text.strip() in ['M', 'F']:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                     for run in paragraph.runs:
@@ -3195,40 +3156,24 @@ def generate_attendance_docx(request, schedule_id):
 
         logger.error("✓ Template2 replacements complete")
 
-        # ======================================================================
-        # MERGE BOTH DOCUMENTS
-        # ======================================================================
-        doc1_bytes = BytesIO()
-        doc1.save(doc1_bytes)
-        doc1_bytes.seek(0)
-
-        doc2_bytes = BytesIO()
-        doc2.save(doc2_bytes)
-        doc2_bytes.seek(0)
-
-        # Combine documents
-        combined = Document()
+        # 🔥 FIXED: Properly combine documents by appending doc2 content to doc1
+        # Add page break before doc2 content
+        doc1.add_page_break()
         
-        # Add doc1 sections
-        for section in doc1.sections:
-            combined._sections.append(section._sectPr)
-        for element in doc1.element.body:
-            combined.element.body.append(element)
-        
-        # Add doc2 sections
+        # Copy all elements from doc2 into doc1
         for element in doc2.element.body:
-            combined.element.body.append(element)
+            doc1.element.body.append(element)
 
-        # Save combined
-        final_buffer = BytesIO()
-        combined.save(final_buffer)
-        final_buffer.seek(0)
+        # Save combined document
+        buffer = BytesIO()
+        doc1.save(buffer)
+        buffer.seek(0)
 
         sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
         filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
 
         response = HttpResponse(
-            final_buffer.read(),
+            buffer.read(),
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
