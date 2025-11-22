@@ -2811,8 +2811,8 @@ def generate_attendance_docx(request, schedule_id):
     
     try:
         # ----------------- Load templates -----------------
-        template1_path = os.path.join(settings.BASE_DIR, 'PTLTApp', 'templates', 'attendance_template.docx')
-        template2_path = os.path.join(settings.BASE_DIR, 'PTLTApp', 'templates', 'attendance_template2.docx')
+        template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
         
         if not os.path.exists(template1_path) or not os.path.exists(template2_path):
             return HttpResponse("Templates not found", status=500)
