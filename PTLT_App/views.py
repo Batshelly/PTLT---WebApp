@@ -2838,14 +2838,28 @@ from PyPDF2 import PdfMerger
 import subprocess
 import tempfile
 
+from django.http import HttpResponse
+from django.shortcuts import render, redirect
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from io import BytesIO
+from collections import defaultdict
+from datetime import datetime
+import re
+import os
+import logging
+
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX, 60 students (both templates) with professor times."""
+    """Generate DOCX with 60 students (40 in Template 1, 20 in Template 2) with professor times."""
     logger = logging.getLogger(__name__)
-    logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
+    logger.error(f"=== DOCX Generation Started for schedule_id: {schedule_id} ===")
 
-    # Helper function to apply replacements and font adjustments
     def apply_replacements_to_doc(doc, replacements):
+        """Apply replacements with font adjustments to document tables."""
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
@@ -2857,7 +2871,7 @@ def generate_attendance_docx(request, schedule_id):
                                     text = text.replace(key, str(value))
                             if text != paragraph.text:
                                 paragraph.text = text
-                                # Font size adjustments for professor times and others
+                                # Font adjustments for different content types
                                 if ':' in text and '-' in text and len(text) <= 11 and text.count(':') == 2:
                                     for run in paragraph.runs:
                                         run.font.size = Pt(7)
@@ -2889,14 +2903,13 @@ def generate_attendance_docx(request, schedule_id):
             return HttpResponse('<h3>Date Range Required</h3>', status=400)
 
         try:
-            logger.error(f"Raw date_range: '{date_range}'")
             parts = date_range.split('to')
             start_str = re.sub(r'[^0-9-]', '', parts[0].strip())
             end_str = re.sub(r'[^0-9-]', '', parts[1].strip())
             start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
             date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
-            logger.error(f"✓ Parsed: {start_date} to {end_date}")
+            logger.error(f"✓ Parsed dates: {start_date} to {end_date}")
         except Exception as e:
             logger.error(f"✗ Invalid date: {str(e)}")
             return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
@@ -2904,19 +2917,18 @@ def generate_attendance_docx(request, schedule_id):
         # Load templates
         template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
-
         if not os.path.exists(template1_path) or not os.path.exists(template2_path):
+            logger.error("✗ Templates not found")
             return HttpResponse("Templates not found", status=500)
-
-        logger.error("✓ Both templates loaded")
+        logger.error("✓ Templates loaded")
 
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
 
+        # Build student list (max 60)
         students_qs = Account.objects.filter(
             course_section=class_schedule.course_section,
             role='Student'
         ).order_by('last_name', 'first_name')
-
         seen_names = set()
         students = []
         for student in students_qs:
@@ -2926,20 +2938,18 @@ def generate_attendance_docx(request, schedule_id):
                 students.append(student)
                 if len(students) >= 60:
                     break
+        logger.error(f"✓ {len(students)} students loaded")
 
-        logger.error(f"✓ {len(students)} students total")
-
+        # Get attendance dates
         attendance_dates = list(
             AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
                 date__range=[start_date, end_date],
                 student__role='Student'
-            )
-            .values_list('date', flat=True)
-            .distinct()
-            .order_by('date')[:8]
+            ).values_list('date', flat=True).distinct().order_by('date')[:8]
         )
 
+        # Get attendance records
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
             date__range=[start_date, end_date],
@@ -2953,9 +2963,9 @@ def generate_attendance_docx(request, schedule_id):
                 'time_out': record.time_out,
                 'status': record.status,
             }
+        logger.error(f"✓ {len(attendance_dates)} dates with attendance")
 
-        logger.error(f"✓ {len(attendance_dates)} dates")
-
+        # Build professor times
         prof_times = {}
         for d in attendance_dates:
             prof_str = ''
@@ -2964,19 +2974,16 @@ def generate_attendance_docx(request, schedule_id):
                 date=d,
                 student__role='Student'
             ).first()
-            if rec:
-                pti = rec.professor_time_in
-                pto = rec.professor_time_out
-                if pti and pto:
-                    prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
+            if rec and rec.professor_time_in and rec.professor_time_out:
+                prof_str = f"{rec.professor_time_in.strftime('%H:%M')}-{rec.professor_time_out.strftime('%H:%M')}"
             prof_times[d] = prof_str
 
         students_template1 = students[0:40]
         students_template2 = students[40:60]
-        logger.error(f"✓ Template1: {len(students_template1)} students, Template2: {len(students_template2)} students")
+        logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
 
+        # ====== TEMPLATE 1 (Students 1-40) ======
         doc1 = Document(template1_path)
-
         replacements1 = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
             '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
@@ -3021,12 +3028,11 @@ def generate_attendance_docx(request, schedule_id):
                 for j in range(1, 9):
                     replacements1[f'{{{{student{i}_time{j}}}}}'] = ''
 
-        logger.error(f"✓ Built {len(replacements1)} replacements for Template1")
         apply_replacements_to_doc(doc1, replacements1)
-        logger.error("✓ Template1 replacements complete")
+        logger.error(f"✓ Template1 populated")
 
+        # ====== TEMPLATE 2 (Students 41-60) - CORRECTED ======
         doc2 = Document(template2_path)
-
         replacements2 = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
             '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
@@ -3047,16 +3053,16 @@ def generate_attendance_docx(request, schedule_id):
 
         replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
-        # Use the actual student numbering for Template 2 placeholders
-        for i in range(1, 21):
-            actual_student_number = 40 + i
+        # 🔥 KEY FIX: Use student numbers 41-60 in placeholders
+        for i in range(1, 21):  # Loop 20 times for students 41-60
+            student_num = 40 + i  # 41, 42, 43, ..., 60
             if i - 1 < len(students_template2):
                 student = students_template2[i - 1]
-                logger.error(f"Template2 row {i}: Student {actual_student_number} = {student.last_name}, {student.first_name}")
-                replacements2[f'{{{{student{actual_student_number}name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements2[f'{{{{student{actual_student_number}sex}}}}'] = student.sex[0] if student.sex else ''
+                logger.error(f"Template2 row {i}: Student {student_num} = {student.last_name}, {student.first_name}")
+                replacements2[f'{{{{student{student_num}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
                 for j in range(1, 9):
-                    key = f'{{{{student{actual_student_number}time{j}}}}}'
+                    key = f'{{{{student{student_num}_time{j}}}}}'
                     if j - 1 < len(attendance_dates):
                         d = attendance_dates[j - 1]
                         if d in attendance_data[student.id]:
@@ -3069,20 +3075,21 @@ def generate_attendance_docx(request, schedule_id):
                                     continue
                     replacements2[key] = ''
             else:
-                replacements2[f'{{{{student{actual_student_number}name}}}}'] = ''
-                replacements2[f'{{{{student{actual_student_number}sex}}}}'] = ''
+                # No student - clear row
+                replacements2[f'{{{{student{student_num}_name}}}}'] = ''
+                replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
                 for j in range(1, 9):
-                    replacements2[f'{{{{student{actual_student_number}time{j}}}}}'] = ''
+                    replacements2[f'{{{{student{student_num}_time{j}}}}}'] = ''
 
-        logger.error(f"✓ Built {len(replacements2)} replacements for Template2")
         apply_replacements_to_doc(doc2, replacements2)
-        logger.error("✓ Template2 replacements complete")
+        logger.error(f"✓ Template2 populated")
 
-        # Merge docs with page break
+        # Merge documents with page break
         doc1.add_page_break()
         for element in doc2.element.body:
             doc1.element.body.append(element)
 
+        # Save to buffer
         buffer = BytesIO()
         doc1.save(buffer)
         buffer.seek(0)
@@ -3090,8 +3097,12 @@ def generate_attendance_docx(request, schedule_id):
         sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
         filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
 
-        response = HttpResponse(buffer.read(), content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        response = HttpResponse(
+            buffer.read(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        logger.error(f"✓ DOCX generated: {filename}")
         return response
 
     except Exception as e:
