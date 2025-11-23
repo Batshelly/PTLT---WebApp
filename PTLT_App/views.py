@@ -3051,6 +3051,9 @@ def generate_attendance_docx(request, schedule_id):
             template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
             doc2 = sync_page_settings_from_template(doc2, template2_path)
             logger.error(f"✓ Template2 page settings synced")
+            
+            doc2 = remove_header_from_doc(doc2)
+            logger.error("✓ Header removed from Template2")
 
 
             # Merge Template 2 with Template 1
@@ -3060,7 +3063,9 @@ def generate_attendance_docx(request, schedule_id):
             logger.error("✓ Template2 merged with Template1")
         else:
             logger.error("✓ Skipping Template2 (40 or fewer students)")
-
+            
+        doc1 = remove_header_from_doc(doc1)
+        logger.error(f"✓ Duplicate headers removed")
         # Save to buffer
         # Sync page settings from template to match perfect formatting
         template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
@@ -3249,3 +3254,22 @@ def adjust_table_cell_widths(doc):
                 tcPr.append(tcW)
     
     return doc
+
+def remove_header_from_doc(doc):
+    """Remove header section from document to avoid duplication"""
+    try:
+        for section in doc.sections:
+            # Clear header
+            header = section.header
+            for paragraph in header.paragraphs:
+                p = paragraph._element
+                p.getparent().remove(p)
+            # Clear footer too
+            footer = section.footer
+            for paragraph in footer.paragraphs:
+                p = paragraph._element
+                p.getparent().remove(p)
+        return doc
+    except Exception as e:
+        print(f"Warning: Could not remove header: {str(e)}")
+        return doc
