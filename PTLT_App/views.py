@@ -3117,17 +3117,19 @@ def download_attendance_pdf(request):
 
 import subprocess
 
+
 def convert_docx_to_pdf(docx_path):
-    """Convert DOCX to PDF using LibreOffice headless mode"""
+    """Convert DOCX to PDF using LibreOffice with proper page settings"""
     try:
         pdf_path = docx_path.replace('.docx', '.pdf')
         
-        # Use LibreOffice to convert
+        # Use LibreOffice with settings to match DOCX rendering
         result = subprocess.run([
             'libreoffice',
             '--headless',
             '--convert-to', 'pdf',
             '--outdir', '/tmp',
+            '--writer-pdf-export-options=UseLosslessCompression,ReduceImageResolution=false',
             docx_path
         ], capture_output=True, text=True, timeout=30)
         
