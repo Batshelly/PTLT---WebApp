@@ -2540,6 +2540,10 @@ def mobile_update_account(request, user_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+from collections import defaultdict
+from datetime import datetime
+from django.http import JsonResponse
+
 @instructor_or_admin_required
 @require_http_methods(["GET"])
 def get_attendance_data_api(request):
@@ -2557,10 +2561,7 @@ def get_attendance_data_api(request):
         except ClassSchedule.DoesNotExist:
             return JsonResponse({'error': 'Class schedule not found'}, status=404)
         
-        # Get all date ranges
-        attendance_dates = list(AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).values_list('date', flat=True).distinct().order_by('date'))
+        attendance_dates = list(AttendanceRecord.objects.filter(class_schedule=class_schedule).values_list('date', flat=True).distinct().order_by('date'))
         
         date_ranges = []
         for i in range(0, len(attendance_dates), 8):
@@ -2571,7 +2572,6 @@ def get_attendance_data_api(request):
                 'label': f'{start_date.strftime("%b %d, %Y")} - {end_date.strftime("%b %d, %Y")}'
             })
         
-        # If date range provided, build attendance table
         if date_range:
             try:
                 start_str, end_str = date_range.split('_to_')
@@ -2582,7 +2582,6 @@ def get_attendance_data_api(request):
         else:
             start_date = end_date = None
         
-        # Get date headers
         if start_date and end_date:
             dates_in_range = list(AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
@@ -2593,19 +2592,40 @@ def get_attendance_data_api(request):
         
         date_headers = [d.strftime('%m/%d') for d in dates_in_range]
         
-        # Get students and attendance
-        attendance_table = []
+        # --- New code to build professor time per date ---
+        prof_in_list = []
+        prof_out_list = []
+        attendance_qs = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).select_related('student')
+        for d in dates_in_range:
+            day_records = attendance_qs.filter(date=d)
+            prof_in = ''
+            prof_out = ''
+            for record in day_records:
+                if getattr(record, 'professor_time_in', None):
+                    try:
+                        prof_in = record.professor_time_in.strftime('%H:%M')
+                    except Exception:
+                        prof_in = str(record.professor_time_in)
+                if getattr(record, 'professor_time_out', None):
+                    try:
+                        prof_out = record.professor_time_out.strftime('%H:%M')
+                    except Exception:
+                        prof_out = str(record.professor_time_out)
+                if prof_in and prof_out:
+                    break
+            prof_in_list.append(prof_in)
+            prof_out_list.append(prof_out)
+        prof_times = [f"Prof In: {prof_in_list[i]}<br>Prof Out: {prof_out_list[i]}" if prof_in_list[i] and prof_out_list[i] else "" for i in range(len(prof_in_list))]
+        # ------------------------------------------------------
+        
         students = Account.objects.filter(
             course_section=class_schedule.course_section,
             role='Student'
         ).order_by('last_name', 'first_name')
         
-        # Build attendance data map
         attendance_data = defaultdict(lambda: defaultdict(dict))
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).select_related('student')
-        
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
                 'time_in': record.time_in,
@@ -2613,7 +2633,7 @@ def get_attendance_data_api(request):
                 'status': record.status
             }
         
-        # Build attendance table
+        attendance_table = []
         for student in students:
             student_data = {
                 'name': f'{student.last_name}, {student.first_name}',
@@ -2630,19 +2650,13 @@ def get_attendance_data_api(request):
                         'status': att['status']
                     })
                 else:
-                    student_data['dates'].append({
-                        'time_in': '',
-                        'time_out': '',
-                        'status': ''
-                    })
+                    student_data['dates'].append({'time_in': '', 'time_out': '', 'status': ''})
             
             attendance_table.append(student_data)
         
-        # Get class data
-        instructor_account = class_schedule.professor
         class_data = {
             'subject': class_schedule.course_title,
-            'faculty_name': f'{instructor_account.first_name} {instructor_account.last_name}' if instructor_account else 'TBA',
+            'faculty_name': f'{class_schedule.professor.first_name} {class_schedule.professor.last_name}' if class_schedule.professor else 'TBA',
             'course': class_schedule.course_code,
             'room': class_schedule.room_assignment,
             'year_section': class_schedule.course_section.section_code if class_schedule.course_section else 'N/A',
@@ -2653,10 +2667,11 @@ def get_attendance_data_api(request):
             'class_data': class_data,
             'date_ranges': date_ranges,
             'date_headers': date_headers,
+            'prof_times': prof_times,  # <- New key here
             'attendance_table': attendance_table,
             'student_count': len(attendance_table)
         })
-        
+    
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -2665,6 +2680,7 @@ def get_attendance_data_api(request):
             'error': f'Server error: {str(e)}',
             'trace': error_trace
         }, status=500)
+
 
 
 # for pdf preview also
