@@ -1961,30 +1961,27 @@ def delete_class_schedule(request, pk):
         except:
             return JsonResponse({"status": "error"}, status=400)
 
+from collections import defaultdict
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+
 @instructor_or_admin_required
 def attendance_report_template(request):
-    # Get logged-in instructor's Account entry
     try:
         instructor_account = Account.objects.get(email=request.user.email, role='Instructor')
     except Account.DoesNotExist:
         return render(request, "error.html", {"message": "Instructor account not found"})
-    
-    # Get class schedules for the dropdown
+
     schedules = ClassSchedule.objects.filter(professor=instructor_account)
-    
     selected_schedule_id = request.GET.get("schedule")
     selected_date_range = request.GET.get("date_range")
     date_ranges = []
     attendance_table = []
-    attendance_data = {}
     students_list = []
-    
+
     if selected_schedule_id:
         try:
-            # Get the selected schedule
             schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
-            
-            # Class details for the form
             attendance_data_attendance_report = {
                 'subject': schedule_obj.course_title,
                 'faculty_name': f"{schedule_obj.professor.first_name} {schedule_obj.professor.last_name}" if schedule_obj.professor else 'TBA',
@@ -1993,18 +1990,16 @@ def attendance_report_template(request):
                 'year_section': schedule_obj.course_section.section_name if schedule_obj.course_section else '',
                 'schedule': f"{schedule_obj.days} {schedule_obj.time_in}-{schedule_obj.time_out}",
             }
-            
         except ClassSchedule.DoesNotExist:
-            pass
+            return render(request, "error.html", {"message": "Selected class schedule not found"})
 
-        # Fetch unique attendance dates for selected class schedule
         attendance_dates = AttendanceRecord.objects.filter(
             class_schedule_id=selected_schedule_id
         ).values_list("date", flat=True).distinct().order_by("date")
 
         attendance_dates = list(attendance_dates)
 
-        # Group into 8-day ranges for the filter dropdown
+        # Build filter dropdown for 8-day slices
         for i in range(0, len(attendance_dates), 8):
             start_date = attendance_dates[i]
             end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
@@ -2013,7 +2008,6 @@ def attendance_report_template(request):
                 "label": f"{start_date.strftime('%B %d, %Y')} - {end_date.strftime('%B %d, %Y')}"
             })
 
-        #if may sinelect na na date range
         if selected_date_range:
             try:
                 start_str, end_str = selected_date_range.split("_to_")
@@ -2023,21 +2017,15 @@ def attendance_report_template(request):
                 start_date = end_date = None
 
             if start_date and end_date:
-                # Get all attendance records within the date range
                 attendance_qs = AttendanceRecord.objects.filter(
                     class_schedule_id=selected_schedule_id,
                     date__range=(start_date, end_date)
                 ).select_related('student')
 
-                # Get schedule object once
-                schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
-
-                # Get students in the same course_section as the schedule
                 students_in_schedule = Account.objects.filter(
                     course_section_id=schedule_obj.course_section_id
                 ).order_by('last_name', 'first_name')
 
-                # Map attendance data: {student_id: {date: {'status': status, 'time_in': time_in, 'time_out': time_out}}}
                 attendance_data = defaultdict(lambda: defaultdict(dict))
                 for record in attendance_qs:
                     attendance_data[record.student.id][record.date] = {
@@ -2046,19 +2034,33 @@ def attendance_report_template(request):
                         'time_out': record.time_out
                     }
 
-                # Build date headers (max 8 dates)
+                # ---- Build date headers (max 8 dates)
                 date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
-                num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_date_columns = []
-                for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
+                num_empty_date_columns = [""] * (8 - len(date_headers))
 
+                # === NEW: Extract professor time in/out for each date ===
+                prof_in_list = []
+                prof_out_list = []
+                for d in date_headers:
+                    day_records = attendance_qs.filter(date=d)
+                    prof_in = ''
+                    prof_out = ''
+                    for record in day_records:
+                        if getattr(record, 'professor_time_in', None):
+                            try: prof_in = record.professor_time_in.strftime('%H:%M')
+                            except Exception: prof_in = str(record.professor_time_in)
+                        if getattr(record, 'professor_time_out', None):
+                            try: prof_out = record.professor_time_out.strftime('%H:%M')
+                            except Exception: prof_out = str(record.professor_time_out)
+                        if prof_in and prof_out:
+                            break
+                    prof_in_list.append(prof_in)
+                    prof_out_list.append(prof_out)
+                date_prof_pairs = list(zip(date_headers, zip(prof_in_list, prof_out_list)))
+                # =======================================================
 
                 attendance_table = []
                 for student in students_in_schedule:
-                    course_section_for_student = student.course_section
-                    # Build dates_statuses as a list of dicts containing all attendance info
                     dates_statuses = []
                     for date in date_headers:
                         attendance_info = attendance_data[student.id].get(date, {})
@@ -2067,49 +2069,26 @@ def attendance_report_template(request):
                             'time_in': attendance_info.get('time_in', ''),
                             'time_out': attendance_info.get('time_out', '')
                         })
-                    
-                    # Pad with empty dicts to always have 8 items
                     while len(dates_statuses) < 8:
                         dates_statuses.append({
                             'status': '',
                             'time_in': '',
                             'time_out': ''
                         })
-                    
-                        
                     row = {
-                        "student_id": student.user_id, 
+                        "student_id": student.user_id,
                         "name": f"{student.first_name} {student.last_name}",
                         "sex": student.sex,
-                        "course": course_section_for_student,
+                        "course": student.course_section,
                         "subject": schedule_obj.course_code,
                         "room": schedule_obj.room_assignment,
-                        "dates": dates_statuses,  # Always 8 items now
+                        "dates": dates_statuses,
                     }
                     attendance_table.append(row)
 
-                else:
-                    row = [""]
-                # Build date headers (max 8 dates)
-                date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
-                num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_date_columns = []
-                for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
-
                 num_empty_row = 40 - len(attendance_table)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_rows = []
-                num_filled_rows = []
-                for i in range(num_empty_row):
-                    num_empty_rows.append("")
-
-                for i in range(len(attendance_table)):
-                    num_filled_rows.append("")
-
-                print(f"{len(num_empty_rows)}")
-                print(f"{len(num_filled_rows)}")
+                num_empty_rows = [""] * num_empty_row
+                num_filled_rows = [""] * len(attendance_table)
 
                 context = {
                     'attendance_data': attendance_data_attendance_report,
@@ -2119,27 +2098,29 @@ def attendance_report_template(request):
                     "selected_date_range": selected_date_range,
                     "attendance_table": attendance_table,
                     "date_headers": date_headers,
+                    "date_prof_pairs": date_prof_pairs,          # <- for your table header!
                     "num_empty_rows": num_empty_rows,
                     "num_filled_rows": num_filled_rows,
                     "num_empty_date_columns": num_empty_date_columns,
                 }
                 return render(request, "attendance_report_template.html", context)
-        else:
-    # If no valid date range selected or dates invalid, still render with schedules & date ranges
-            context = {
-                'attendance_data': attendance_data_attendance_report,
-                "schedules": schedules,
-                "date_ranges": date_ranges,
-                "selected_schedule_id": selected_schedule_id,
-                "attendance_table": [],
-                "date_headers": [],
-                "num_empty_rows": [""]*40,
-                "num_filled_rows": [],
-                "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
-            }
-            return render(request, "attendance_report_template.html", context)
 
-    # If no schedule selected at all, render with just schedules and empty date ranges
+        # If no valid date range, return with minimal data
+        context = {
+            'attendance_data': attendance_data_attendance_report,
+            "schedules": schedules,
+            "date_ranges": date_ranges,
+            "selected_schedule_id": selected_schedule_id,
+            "attendance_table": [],
+            "date_headers": [],
+            "date_prof_pairs": [],
+            "num_empty_rows": [""]*40,
+            "num_filled_rows": [],
+            "num_empty_date_columns": [""]*8,
+        }
+        return render(request, "attendance_report_template.html", context)
+
+    # If no schedule selected, blank results
     context = {
         'attendance_data': {"":"",'faculty_name': f"{instructor_account.first_name} {instructor_account.last_name}" if instructor_account else 'TBA',"":"","":"","":"","":""},
         "schedules": schedules,
@@ -2147,11 +2128,13 @@ def attendance_report_template(request):
         "selected_schedule_id": selected_schedule_id,
         "attendance_table": [],
         "date_headers": [],
+        "date_prof_pairs": [],
         "num_empty_rows": [""]*40,
         "num_filled_rows": [],
-        "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
+        "num_empty_date_columns": [""]*8,
     }
     return render(request, "attendance_report_template.html", context)
+
     
 
 from django.http import JsonResponse
