@@ -3118,29 +3118,42 @@ def download_attendance_pdf(request):
 import subprocess
 
 
+
 def convert_docx_to_pdf(docx_path):
     """Convert DOCX to PDF using LibreOffice with proper page settings"""
     try:
         pdf_path = docx_path.replace('.docx', '.pdf')
         
-        # Use LibreOffice with settings to match DOCX rendering
+        # Use LibreOffice with explicit page size settings
         result = subprocess.run([
             'libreoffice',
             '--headless',
             '--convert-to', 'pdf',
             '--outdir', '/tmp',
-            '--writer-pdf-export-options=UseLosslessCompression,ReduceImageResolution=false',
             docx_path
-        ], capture_output=True, text=True, timeout=30)
+        ], 
+        capture_output=True, 
+        text=True, 
+        timeout=30,
+        env={**os.environ, 'SAL_NO_DIALOGS': '1'}  # Suppress dialogs
+        )
         
         if result.returncode != 0:
-            raise Exception(f"LibreOffice conversion failed: {result.stderr}")
+            # Log actual error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"LibreOffice stderr: {result.stderr}")
+            logger.error(f"LibreOffice stdout: {result.stdout}")
+            raise Exception(f"LibreOffice conversion failed")
         
         # Read the converted PDF
+        if not os.path.exists(pdf_path):
+            raise Exception(f"PDF file not created at {pdf_path}")
+            
         with open(pdf_path, 'rb') as f:
             pdf_bytes = f.read()
         
-        # Clean up PDF file
+        # Clean up
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
         
