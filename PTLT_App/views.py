@@ -2546,6 +2546,7 @@ from django.http import JsonResponse
 
 @instructor_or_admin_required
 @require_http_methods(["GET"])
+#ITO MAS MAHABA PRE FEELING KO ITO YUNG NAGANA HEHEHEHEHEHEHHE
 def get_attendance_data_api(request):
     """API endpoint to get attendance data as JSON"""
     
@@ -2860,6 +2861,7 @@ from datetime import datetime
 import re
 import os
 import logging
+from tempfile import NamedTemporaryFile
 
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
@@ -3119,16 +3121,45 @@ def generate_attendance_docx(request, schedule_id):
         page_suffix = "1-60" if use_template2 else "1-40"
         filename = f"Attendance_{sanitized_code}{date_range_str}_students{page_suffix}.docx"
 
-        response = HttpResponse(
-            buffer.read(),
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        logger.error(f"✓ DOCX generated: {filename}")
-        return response
+        with NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
+            doc1.save(tmp.name)
+            docx_path = tmp.name
+            logger.error(f"✓ DOCX temp file created: {docx_path}")
+
+        return docx_path
 
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+    
+
+@instructor_or_admin_required
+@require_POST
+def download_attendance_pdf(request):
+    schedule_id = request.POST.get('schedule_id')
+    if not schedule_id:
+        return JsonResponse({'error': 'No schedule_id provided'}, status=400)
+    
+    try:
+        # Generate DOCX file and retrieve file path
+        docx_path = generate_attendance_docx_file(request, schedule_id)
+        
+        # Convert to PDF
+        pdf_bytes = convert_docx_to_pdf(docx_path)
+        
+        # Clean up temp DOCX file
+        if os.path.exists(docx_path):
+            os.remove(docx_path)
+        
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.pdf"'
+        return response
+    
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }, status=500)

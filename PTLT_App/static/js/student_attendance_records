@@ -149,11 +149,39 @@ function previewDocxFile() {
     };
 }
 
-function downloadDocx() {
-    if (!selectedClassId) { alert('Select a class first!'); return; }
-    let url = `/attendance/docx/${selectedClassId}/`;
-    if (selectedDateRange) url += `?date_range=${selectedDateRange}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.click();
+function downloadPDF() {
+    if (!selectedClassId || !selectedDateRange) { 
+        alert('Please select both a class and date range first!'); 
+        return; 
+    }
+    
+    const downloadBtn = document.getElementById('downloadBtn');
+    const originalHtml = downloadBtn.innerHTML;
+    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating PDF...';
+    downloadBtn.disabled = true;
+    
+    // Create form for POST request
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/download-attendance-pdf/';
+    
+    // Get CSRF token from the page
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    form.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+        <input type="hidden" name="schedule_id" value="${selectedClassId}">
+        <input type="hidden" name="date_range" value="${selectedDateRange}">
+    `;
+    
+    document.body.appendChild(form);
+    form.submit();
+    
+    // Reset button after 2 seconds (form submission will trigger download)
+    setTimeout(() => {
+        downloadBtn.innerHTML = originalHtml;
+        downloadBtn.disabled = false;
+        document.body.removeChild(form);
+    }, 2000);
 }
+
