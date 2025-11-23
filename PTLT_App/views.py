@@ -3078,11 +3078,10 @@ def generate_attendance_docx(request, schedule_id):
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
-    
-@instructor_or_admin_required
+    @instructor_or_admin_required
 @require_POST
 def download_attendance_pdf(request):
-    """Download attendance as DOCX (perfect formatting)"""
+    """Download attendance as PDF (with LibreOffice conversion)"""
     schedule_id = request.POST.get('schedule_id')
     date_range = request.POST.get('date_range')
     
@@ -3096,20 +3095,16 @@ def download_attendance_pdf(request):
         # Generate DOCX file (with synced page settings)
         docx_path = generate_attendance_docx(request, schedule_id)
         
-        # Read the file
-        with open(docx_path, 'rb') as f:
-            docx_bytes = f.read()
+        # Convert DOCX to PDF using LibreOffice
+        pdf_bytes = convert_docx_to_pdf(docx_path)
         
-        # Clean up temp file
+        # Clean up temp DOCX file
         if os.path.exists(docx_path):
             os.remove(docx_path)
         
-        # Return as DOCX
-        response = HttpResponse(
-            docx_bytes,
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.docx"'
+        # Return as PDF
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.pdf"'
         return response
     
     except Exception as e:
@@ -3118,6 +3113,7 @@ def download_attendance_pdf(request):
             'error': str(e),
             'trace': traceback.format_exc()
         }, status=500)
+
 
 
 
