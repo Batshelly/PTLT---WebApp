@@ -2854,7 +2854,7 @@ import logging
 
 @instructor_or_admin_required
 def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX with 60 students (40 in Template 1, 20 in Template 2) with professor times."""
+    """Generate DOCX with up to 60 students. Template 2 only appears if >40 students."""
     logger = logging.getLogger(__name__)
     logger.error(f"=== DOCX Generation Started for schedule_id: {schedule_id} ===")
 
@@ -2917,10 +2917,10 @@ def generate_attendance_docx(request, schedule_id):
         # Load templates
         template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
-        if not os.path.exists(template1_path) or not os.path.exists(template2_path):
-            logger.error("✗ Templates not found")
-            return HttpResponse("Templates not found", status=500)
-        logger.error("✓ Templates loaded")
+        if not os.path.exists(template1_path):
+            logger.error("✗ Template 1 not found")
+            return HttpResponse("Template 1 not found", status=500)
+        logger.error("✓ Template 1 loaded")
 
         class_schedule = ClassSchedule.objects.get(id=schedule_id)
 
@@ -2980,7 +2980,10 @@ def generate_attendance_docx(request, schedule_id):
 
         students_template1 = students[0:40]
         students_template2 = students[40:60]
-        logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
+        
+        # 🔥 CHECK: Only use Template 2 if there are more than 40 students
+        use_template2 = len(students) > 40
+        logger.error(f"✓ Template1: {len(students_template1)} students, Template2: {len(students_template2)} students (Use Template2: {use_template2})")
 
         # ====== TEMPLATE 1 (Students 1-40) ======
         doc1 = Document(template1_path)
@@ -3033,63 +3036,70 @@ def generate_attendance_docx(request, schedule_id):
         apply_replacements_to_doc(doc1, replacements1)
         logger.error(f"✓ Template1 populated")
 
-        # ====== TEMPLATE 2 (Students 41-60) - SAME LOGIC AS TEMPLATE 1 ======
-        doc2 = Document(template2_path)
-        replacements2 = {
-            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
-            '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
-            '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
-            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
-            '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
-            '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
-        }
+        # ====== TEMPLATE 2 (Students 41-60) - ONLY IF >40 STUDENTS ======
+        if use_template2:
+            if not os.path.exists(template2_path):
+                logger.error("✗ Template 2 not found but needed")
+                return HttpResponse("Template 2 not found", status=500)
+            
+            doc2 = Document(template2_path)
+            replacements2 = {
+                '{{subject}}': class_schedule.course_title or class_schedule.course_code,
+                '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
+                '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
+                '{{room_assignment}}': class_schedule.room_assignment or "TBA",
+                '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
+                '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
+            }
 
-        # Dates and professor times (SAME AS TEMPLATE 1)
-        for i in range(1, 9):
-            if i - 1 < len(attendance_dates):
-                d = attendance_dates[i - 1]
-                replacements2[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                replacements2[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
-            else:
-                replacements2[f'{{{{date{i}}}}}'] = ''
-                replacements2[f'{{{{prof{i}}}}}'] = ''
+            # Dates and professor times
+            for i in range(1, 9):
+                if i - 1 < len(attendance_dates):
+                    d = attendance_dates[i - 1]
+                    replacements2[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
+                    replacements2[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
+                else:
+                    replacements2[f'{{{{date{i}}}}}'] = ''
+                    replacements2[f'{{{{prof{i}}}}}'] = ''
 
-        replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
+            replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
-        # Students 41-60 (IDENTICAL LOGIC TO TEMPLATE 1, just different numbering)
-        for i in range(1, 21):  # Loop 20 times
-            student_num = 40 + i  # Converts to 41, 42, ..., 60
-            if i - 1 < len(students_template2):
-                student = students_template2[i - 1]
-                logger.error(f"Template2: Student {student_num} = {student.last_name}, {student.first_name}")
-                replacements2[f'{{{{student{student_num}_name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
-                for j in range(1, 9):
-                    key = f'{{{{student{student_num}_time{j}}}}}'
-                    if j - 1 < len(attendance_dates):
-                        d = attendance_dates[j - 1]
-                        if d in attendance_data[student.id]:
-                            att = attendance_data[student.id][d]
-                            if att['status'] in ['Present', 'Late']:
-                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
-                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
-                                if time_in_str and time_out_str:
-                                    replacements2[key] = f"{time_in_str} - {time_out_str}"
-                                    continue
-                    replacements2[key] = ''
-            else:
-                replacements2[f'{{{{student{student_num}_name}}}}'] = ''
-                replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
-                for j in range(1, 9):
-                    replacements2[f'{{{{student{student_num}_time{j}}}}}'] = ''
+            # Students 41-60
+            for i in range(1, 21):
+                student_num = 40 + i
+                if i - 1 < len(students_template2):
+                    student = students_template2[i - 1]
+                    replacements2[f'{{{{student{student_num}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                    replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
+                    for j in range(1, 9):
+                        key = f'{{{{student{student_num}_time{j}}}}}'
+                        if j - 1 < len(attendance_dates):
+                            d = attendance_dates[j - 1]
+                            if d in attendance_data[student.id]:
+                                att = attendance_data[student.id][d]
+                                if att['status'] in ['Present', 'Late']:
+                                    time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                    time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                    if time_in_str and time_out_str:
+                                        replacements2[key] = f"{time_in_str} - {time_out_str}"
+                                        continue
+                        replacements2[key] = ''
+                else:
+                    replacements2[f'{{{{student{student_num}_name}}}}'] = ''
+                    replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
+                    for j in range(1, 9):
+                        replacements2[f'{{{{student{student_num}_time{j}}}}}'] = ''
 
-        apply_replacements_to_doc(doc2, replacements2)
-        logger.error(f"✓ Template2 populated")
+            apply_replacements_to_doc(doc2, replacements2)
+            logger.error(f"✓ Template2 populated")
 
-        # Merge documents with page break
-        doc1.add_page_break()
-        for element in doc2.element.body:
-            doc1.element.body.append(element)
+            # Merge Template 2 with Template 1
+            doc1.add_page_break()
+            for element in doc2.element.body:
+                doc1.element.body.append(element)
+            logger.error("✓ Template2 merged with Template1")
+        else:
+            logger.error("✓ Skipping Template2 (40 or fewer students)")
 
         # Save to buffer
         buffer = BytesIO()
@@ -3097,7 +3107,8 @@ def generate_attendance_docx(request, schedule_id):
         buffer.seek(0)
 
         sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
-        filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
+        page_suffix = "1-60" if use_template2 else "1-40"
+        filename = f"Attendance_{sanitized_code}{date_range_str}_students{page_suffix}.docx"
 
         response = HttpResponse(
             buffer.read(),
