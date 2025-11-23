@@ -143,13 +143,15 @@
                             <th rowspan="3">Sex (M/F)</th>
                             <th colspan="8">Status</th>
                         </tr>
-                        <tr>
-                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
-                            <th>Date</th><th>Date</th><th>Date</th><th>Date</th>
-                        </tr>
                         <tr class="bg-white">
-                            {% for date in date_headers %}
-                                <th class="date-th">{{ date|date:"m/d/Y" }}</th>
+                            {% for date, prof in date_prof_pairs %}
+                                <th class="date-th text-center">
+                                    {{ date|date:"m/d/Y" }}<br>
+                                    <span style="font-size:10px;font-weight:normal;">
+                                        Prof In: {{ prof.0 }}<br>
+                                        Prof Out: {{ prof.1 }}
+                                    </span>
+                                </th>
                             {% endfor %}
                             {% for i in num_empty_date_columns %}
                                 <th class="date-th"></th>

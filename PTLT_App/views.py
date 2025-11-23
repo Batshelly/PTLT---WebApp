@@ -859,17 +859,18 @@ def reset_password(request, encoded_email, token):
         return redirect('login')
     
 
+from collections import defaultdict
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+
 @instructor_required
 def student_attendance_records(request):
-    # Get logged-in instructor's Account entry
     try:
         instructor_account = Account.objects.get(email=request.user.email, role='Instructor')
     except Account.DoesNotExist:
         return render(request, "error.html", {"message": "Instructor account not found"})
 
-    # Subjects/Courses taught by this instructor
     schedules = ClassSchedule.objects.filter(professor=instructor_account)
-
     selected_schedule_id = request.GET.get("schedule")
     selected_date_range = request.GET.get("date_range")
     date_ranges = []
@@ -880,7 +881,6 @@ def student_attendance_records(request):
         attendance_dates = AttendanceRecord.objects.filter(
             class_schedule_id=selected_schedule_id
         ).values_list("date", flat=True).distinct().order_by("date")
-
         attendance_dates = list(attendance_dates)
 
         # Group into 8-day ranges for the filter dropdown
@@ -907,15 +907,13 @@ def student_attendance_records(request):
                     date__range=(start_date, end_date)
                 ).select_related('student')
 
-                # Get schedule object once
                 schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
 
-                # Get students in the same course_section as the schedule
                 students_in_schedule = Account.objects.filter(
                     course_section_id=schedule_obj.course_section_id
                 ).order_by('last_name', 'first_name')
 
-                # Map attendance data: {student_id: {date: {'status': status, 'time_in': time_in, 'time_out': time_out}}}
+                # Map attendance data: {student_id: {date: {...}}}
                 attendance_data = defaultdict(lambda: defaultdict(dict))
                 for record in attendance_qs:
                     attendance_data[record.student.id][record.date] = {
@@ -924,19 +922,32 @@ def student_attendance_records(request):
                         'time_out': record.time_out
                     }
 
-                # Build date headers (max 8 dates)
                 date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
-                num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_date_columns = []
-                for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
+                num_empty_date_columns = [""] * (8 - len(date_headers))
 
+                # ===== Professor Time In/Out Block =====
+                prof_in_list = []
+                prof_out_list = []
+                for d in date_headers:
+                    day_records = attendance_qs.filter(date=d)
+                    prof_in = ''
+                    prof_out = ''
+                    for record in day_records:
+                        if getattr(record, 'professor_time_in', None):
+                            try: prof_in = record.professor_time_in.strftime('%H:%M')
+                            except Exception: prof_in = str(record.professor_time_in)
+                        if getattr(record, 'professor_time_out', None):
+                            try: prof_out = record.professor_time_out.strftime('%H:%M')
+                            except Exception: prof_out = str(record.professor_time_out)
+                        if prof_in and prof_out:
+                            break
+                    prof_in_list.append(prof_in)
+                    prof_out_list.append(prof_out)
+                date_prof_pairs = list(zip(date_headers, zip(prof_in_list, prof_out_list)))
+                # =======================================
 
                 attendance_table = []
                 for student in students_in_schedule:
-                    course_section_for_student = student.course_section
-                    # Build dates_statuses as a list of dicts containing all attendance info
                     dates_statuses = []
                     for date in date_headers:
                         attendance_info = attendance_data[student.id].get(date, {})
@@ -945,8 +956,6 @@ def student_attendance_records(request):
                             'time_in': attendance_info.get('time_in', ''),
                             'time_out': attendance_info.get('time_out', '')
                         })
-                    
-                    # Pad with empty dicts to always have 8 items
                     while len(dates_statuses) < 8:
                         dates_statuses.append({
                             'status': '',
@@ -954,14 +963,11 @@ def student_attendance_records(request):
                             'time_out': ''
                         })
 
-                    # DEBUG: Check the length
-                    print(f"Student {student.user_id}: dates_statuses length = {len(dates_statuses)}")
-
                     row = {
                         "student_id": student.user_id, 
                         "name": f"{student.first_name} {student.last_name}",
                         "sex": student.sex,
-                        "course": course_section_for_student,
+                        "course": student.course_section,
                         "subject": schedule_obj.course_code,
                         "room": schedule_obj.room_assignment,
                         "dates": dates_statuses,  # Always 8 items now
@@ -975,31 +981,35 @@ def student_attendance_records(request):
                     "selected_date_range": selected_date_range,
                     "attendance_table": attendance_table,
                     "date_headers": date_headers,
+                    "date_prof_pairs": date_prof_pairs,  # <-- for your template header loop!
                     "num_empty_date_columns": num_empty_date_columns,
                 }
                 return render(request, "student_attendance_records.html", context)
 
-        # If no valid date range selected or dates invalid, still render with schedules & date ranges
+        # If no valid date range selected or dates invalid
         context = {
             "schedules": schedules,
             "date_ranges": date_ranges,
             "selected_schedule_id": selected_schedule_id,
             "attendance_table": [],
             "date_headers": [],
-            "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
+            "date_prof_pairs": [],
+            "num_empty_date_columns": [""]*8,
         }
         return render(request, "student_attendance_records.html", context)
 
-    # If no schedule selected at all, render with just schedules and empty date ranges
+    # If no schedule selected at all
     context = {
         "schedules": schedules,
         "date_ranges": date_ranges,
         "selected_schedule_id": selected_schedule_id,
         "attendance_table": [],
         "date_headers": [],
-        "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
+        "date_prof_pairs": [],
+        "num_empty_date_columns": [""]*8,
     }
     return render(request, "student_attendance_records.html", context)
+
 
 
 
@@ -1218,11 +1228,28 @@ from django.views.decorators.http import require_http_methods
 from .models import Account, ClassSchedule, CourseSection, AttendanceRecord
 from datetime import datetime
 
+# 🔥 HELPER FUNCTION: Parse time from CSV
+def parse_time_from_csv(time_str):
+    """Parse time from CSV in formats: HH:MM or HH:MM:SS. Returns time object or None."""
+    if not time_str or str(time_str).strip().lower() in ['nan', 'none', '']:
+        return None
+    
+    time_str = str(time_str).strip()
+    
+    for time_format in ['%H:%M:%S', '%H:%M']:
+        try:
+            return datetime.strptime(time_str, time_format).time()
+        except ValueError:
+            continue
+    
+    return None
+
+
 @csrf_exempt
 @instructor_or_admin_required
 @require_http_methods(["POST"])
 def import_class_schedule(request):
-    """Import attendance records from biometric CSV export - EXACT MATCH ONLY"""
+    """Import attendance records from biometric CSV export with professor times."""
     
     if 'csv_file' not in request.FILES:
         return JsonResponse({
@@ -1245,13 +1272,15 @@ def import_class_schedule(request):
             'skipped': 0,
             'student_not_found': 0,
             'course_not_found': 0,
+            'professor_mismatch': 0,
             'empty_rows': 0,
             'errors': []
         }
         
         for line_num, row in enumerate(reader, start=2):
             try:
-                # ✨ EXTRACT FIELDS FROM YOUR CSV FORMAT
+                # Extract all fields
+                professor_user_id = row.get('professor_user_id', '').strip()
                 course_code = row.get('course_code', '').strip()
                 student_id = row.get('student_id', '').strip()
                 attendance_date_str = row.get('attendance_date', '').strip()
@@ -1259,173 +1288,195 @@ def import_class_schedule(request):
                 attendance_time_out_str = row.get('attendance_time_out', '').strip()
                 attendance_status = row.get('attendance_status', 'Present').strip().title()
                 
-                # ✨ SKIP COMPLETELY EMPTY ROWS
+                # 🔥 Extract professor times (optional)
+                professor_time_in_str = row.get('professor_time_in', '').strip()
+                professor_time_out_str = row.get('professor_time_out', '').strip()
+                
+                # Skip completely empty rows
                 if not any([course_code, student_id, attendance_date_str, attendance_time_in_str]):
                     results['empty_rows'] += 1
                     continue
                 
-                # ✨ VALIDATE REQUIRED FIELDS
+                # 🔥 VALIDATE: professor_user_id is REQUIRED
+                if not professor_user_id:
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(f"Line {line_num}: Missing professor_user_id")
+                    results['skipped'] += 1
+                    continue
+                
+                # Validate other required fields
                 if not all([course_code, student_id, attendance_date_str, attendance_time_in_str]):
                     missing_fields = []
                     if not course_code: missing_fields.append('course_code')
                     if not student_id: missing_fields.append('student_id')
                     if not attendance_date_str: missing_fields.append('attendance_date')
                     if not attendance_time_in_str: missing_fields.append('attendance_time_in')
-                    
                     results['errors'].append(f"Line {line_num}: Missing fields: {', '.join(missing_fields)}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 1: VERIFY COURSE CODE EXISTS
+                # STEP 1: Verify course exists
                 try:
                     class_schedule = ClassSchedule.objects.get(course_code=course_code)
                 except ClassSchedule.DoesNotExist:
                     results['course_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Course '{course_code}' not found")
+                    results['errors'].append(f"Line {line_num}: Course {course_code} not found")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 2: VERIFY STUDENT EXISTS (EXACT MATCH ONLY - NO FLEXIBLE MATCHING)
+                # 🔥 STEP 2: VERIFY PROFESSOR MATCH (REQUIRED)
+                if not class_schedule.professor:
+                    # Course has no professor assigned
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(
+                        f"Line {line_num}: Course {course_code} has no professor assigned in database"
+                    )
+                    results['skipped'] += 1
+                    continue
+                
+                if str(class_schedule.professor.user_id) != professor_user_id:
+                    # Professor doesn't match
+                    results['professor_mismatch'] += 1
+                    results['errors'].append(
+                        f"Line {line_num}: Professor mismatch for {course_code}. "
+                        f"Database: {class_schedule.professor.user_id}, CSV: {professor_user_id}"
+                    )
+                    results['skipped'] += 1
+                    continue
+                
+                # STEP 3: Verify student exists
                 try:
                     student = Account.objects.get(user_id=student_id, role='Student')
                 except Account.DoesNotExist:
                     results['student_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Student '{student_id}' not found (exact match required)")
+                    results['errors'].append(f"Line {line_num}: Student {student_id} not found")
                     results['skipped'] += 1
                     continue
                 except Account.MultipleObjectsReturned:
                     results['student_not_found'] += 1
-                    results['errors'].append(f"Line {line_num}: Multiple students found with ID '{student_id}'")
+                    results['errors'].append(f"Line {line_num}: Multiple students with ID {student_id}")
                     results['skipped'] += 1
                     continue
                 
-                # ✨ STEP 3: PARSE DATE & TIMES (FLEXIBLE FORMATS)
-                try:
-                    # Parse date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
-                    attendance_date = None
-                    for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']:
-                        try:
-                            attendance_date = datetime.strptime(attendance_date_str, date_format).date()
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if not attendance_date:
-                        raise ValueError(f"Date '{attendance_date_str}' must be YYYY-MM-DD, DD/MM/YYYY, or MM/DD/YYYY")
-                    
-                    # Parse time_in (supports H:M and H:M:S)
-                    attendance_time_in = None
-                    for time_format in ['%H:%M:%S', '%H:%M']:
-                        try:
-                            attendance_time_in = datetime.strptime(attendance_time_in_str, time_format).time()
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if not attendance_time_in:
-                        raise ValueError(f"Time '{attendance_time_in_str}' must be HH:MM or HH:MM:SS")
-                    
-                    # Parse time_out (optional)
-                    attendance_time_out = None
-                    if attendance_time_out_str:
-                        for time_format in ['%H:%M:%S', '%H:%M']:
-                            try:
-                                attendance_time_out = datetime.strptime(attendance_time_out_str, time_format).time()
-                                break
-                            except ValueError:
-                                continue
-                    
-                except ValueError as e:
-                    results['errors'].append(f"Line {line_num}: Invalid date/time - {str(e)}")
-                    results['skipped'] += 1
-                    continue
+                # Parse date
+                attendance_date = None
+                for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%Y/%d/%m']:
+                    try:
+                        attendance_date = datetime.strptime(attendance_date_str, date_format).date()
+                        break
+                    except ValueError:
+                        continue
                 
-                # ✨ STEP 4: NORMALIZE STATUS
+                if not attendance_date:
+                    raise ValueError(f"Invalid date format: {attendance_date_str}")
+                
+                # Parse times
+                attendance_time_in = parse_time_from_csv(attendance_time_in_str)
+                if not attendance_time_in:
+                    raise ValueError(f"Invalid time_in format: {attendance_time_in_str}")
+                
+                attendance_time_out = parse_time_from_csv(attendance_time_out_str) if attendance_time_out_str else None
+                
+                # 🔥 Parse professor times (optional)
+                professor_time_in = parse_time_from_csv(professor_time_in_str)
+                professor_time_out = parse_time_from_csv(professor_time_out_str)
+                
+                # Normalize status
                 status_map = {
                     'LATE': 'Late',
                     'PRESENT': 'Present',
                     'ABSENT': 'Absent',
                     'Late': 'Late',
                     'Present': 'Present',
-                    'Absent': 'Absent'
+                    'Absent': 'Absent',
                 }
                 normalized_status = status_map.get(attendance_status, 'Present')
                 
-                # ✨ STEP 5: CREATE OR UPDATE ATTENDANCE RECORD
-                attendance_record, created = AttendanceRecord.objects.update_or_create(
-                    class_schedule=class_schedule,
-                    student=student,
-                    date=attendance_date,
-                    defaults={
-                        'professor': class_schedule.professor,
-                        'course_section': class_schedule.course_section,
-                        'time_in': attendance_time_in,
-                        'time_out': attendance_time_out,
-                        'status': normalized_status,
-                        'fingerprint_data': b'',
-                    }
-                )
-                
-                if created:
-                    results['attendance_created'] += 1
-                else:
+                # STEP 4: Create or update record (professor already validated to match)
+                try:
+                    # Try to get existing record
+                    attendance_record = AttendanceRecord.objects.get(
+                        class_schedule=class_schedule,
+                        student=student,
+                        date=attendance_date
+                    )
+                    
+                    # Record exists - UPDATE it
+                    attendance_record.time_in = attendance_time_in
+                    attendance_record.time_out = attendance_time_out
+                    attendance_record.status = normalized_status
+                    
+                    # 🔥 Update professor times ONLY if provided in CSV
+                    if professor_time_in:
+                        attendance_record.professor_time_in = professor_time_in
+                    if professor_time_out:
+                        attendance_record.professor_time_out = professor_time_out
+                    
+                    attendance_record.save()
                     results['attendance_updated'] += 1
-                
+                    
+                except AttendanceRecord.DoesNotExist:
+                    # Record doesn't exist - CREATE new one
+                    attendance_record = AttendanceRecord.objects.create(
+                        class_schedule=class_schedule,
+                        student=student,
+                        date=attendance_date,
+                        professor=class_schedule.professor,
+                        course_section=class_schedule.course_section,
+                        time_in=attendance_time_in,
+                        time_out=attendance_time_out,
+                        status=normalized_status,
+                        fingerprint_data=b'',
+                        professor_time_in=professor_time_in,
+                        professor_time_out=professor_time_out,
+                    )
+                    results['attendance_created'] += 1
+                    
             except Exception as e:
                 results['errors'].append(f"Line {line_num}: {str(e)}")
                 results['skipped'] += 1
         
-        # ✨ DETERMINE STATUS
+        # Determine status
         total_processed = results['attendance_created'] + results['attendance_updated']
         
-        if total_processed == 0:
-            if results['skipped'] > 0:
-                status_code = 'all_skipped'
-            else:
-                status_code = 'failed'
-        elif results['skipped'] == 0:
-            status_code = 'ok'
+        if total_processed > 0:
+            status = 'ok' if results['skipped'] == 0 else 'partial'
+        elif results['skipped'] > 0:
+            status = 'all_skipped'
         else:
-            status_code = 'partial'
-        
-        # ✨ BUILD SUMMARY MESSAGE
-        message_parts = []
-        if results['student_not_found'] > 0:
-            message_parts.append(f"{results['student_not_found']} students not found")
-        if results['course_not_found'] > 0:
-            message_parts.append(f"{results['course_not_found']} courses not found")
-        if results['empty_rows'] > 0:
-            message_parts.append(f"{results['empty_rows']} empty rows skipped")
-        
-        summary_message = '; '.join(message_parts) if message_parts else 'All records processed successfully'
-        
-        print(f"✅ Import completed: {total_processed} records processed, {results['skipped']} skipped")
+            status = 'error'
         
         return JsonResponse({
-            'status': status_code,
+            'status': status,
             'imported': total_processed,
             'attendance_created': results['attendance_created'],
             'attendance_updated': results['attendance_updated'],
             'skipped': results['skipped'],
             'student_not_found': results['student_not_found'],
             'course_not_found': results['course_not_found'],
+            'professor_mismatch': results['professor_mismatch'],
             'empty_rows': results['empty_rows'],
-            'message': summary_message,
-            'errors': results['errors'][:20]
+            'errors': results['errors'][:50],
+            'message': (
+                f"✅ Created: {results['attendance_created']}, "
+                f"Updated: {results['attendance_updated']}, "
+                f"Skipped: {results['skipped']} "
+                f"(Prof mismatch: {results['professor_mismatch']})"
+            )
         })
         
     except Exception as e:
-        print(f"❌ Error in import: {str(e)}")
         import traceback
-        traceback.print_exc()
-        
         return JsonResponse({
             'status': 'error',
-            'message': str(e),
+            'message': f'Error processing CSV: {str(e)}',
+            'traceback': traceback.format_exc(),
             'imported': 0,
-            'skipped': 0,
-            'errors': [f'Server error: {str(e)}']
+            'errors': [str(e)]
         }, status=500)
+
+
+    
 @require_http_methods(["POST"])
 def import_class_from_pdf(request):
     """Import class schedule from PDF with duplicate detection and Unicode support"""
@@ -1920,30 +1971,27 @@ def delete_class_schedule(request, pk):
         except:
             return JsonResponse({"status": "error"}, status=400)
 
+from collections import defaultdict
+from django.shortcuts import render
+from django.utils.dateparse import parse_date
+
 @instructor_or_admin_required
 def attendance_report_template(request):
-    # Get logged-in instructor's Account entry
     try:
         instructor_account = Account.objects.get(email=request.user.email, role='Instructor')
     except Account.DoesNotExist:
         return render(request, "error.html", {"message": "Instructor account not found"})
-    
-    # Get class schedules for the dropdown
+
     schedules = ClassSchedule.objects.filter(professor=instructor_account)
-    
     selected_schedule_id = request.GET.get("schedule")
     selected_date_range = request.GET.get("date_range")
     date_ranges = []
     attendance_table = []
-    attendance_data = {}
     students_list = []
-    
+
     if selected_schedule_id:
         try:
-            # Get the selected schedule
             schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
-            
-            # Class details for the form
             attendance_data_attendance_report = {
                 'subject': schedule_obj.course_title,
                 'faculty_name': f"{schedule_obj.professor.first_name} {schedule_obj.professor.last_name}" if schedule_obj.professor else 'TBA',
@@ -1952,18 +2000,16 @@ def attendance_report_template(request):
                 'year_section': schedule_obj.course_section.section_name if schedule_obj.course_section else '',
                 'schedule': f"{schedule_obj.days} {schedule_obj.time_in}-{schedule_obj.time_out}",
             }
-            
         except ClassSchedule.DoesNotExist:
-            pass
+            return render(request, "error.html", {"message": "Selected class schedule not found"})
 
-        # Fetch unique attendance dates for selected class schedule
         attendance_dates = AttendanceRecord.objects.filter(
             class_schedule_id=selected_schedule_id
         ).values_list("date", flat=True).distinct().order_by("date")
 
         attendance_dates = list(attendance_dates)
 
-        # Group into 8-day ranges for the filter dropdown
+        # Build filter dropdown for 8-day slices
         for i in range(0, len(attendance_dates), 8):
             start_date = attendance_dates[i]
             end_date = attendance_dates[min(i + 7, len(attendance_dates) - 1)]
@@ -1972,7 +2018,6 @@ def attendance_report_template(request):
                 "label": f"{start_date.strftime('%B %d, %Y')} - {end_date.strftime('%B %d, %Y')}"
             })
 
-        #if may sinelect na na date range
         if selected_date_range:
             try:
                 start_str, end_str = selected_date_range.split("_to_")
@@ -1982,21 +2027,15 @@ def attendance_report_template(request):
                 start_date = end_date = None
 
             if start_date and end_date:
-                # Get all attendance records within the date range
                 attendance_qs = AttendanceRecord.objects.filter(
                     class_schedule_id=selected_schedule_id,
                     date__range=(start_date, end_date)
                 ).select_related('student')
 
-                # Get schedule object once
-                schedule_obj = ClassSchedule.objects.get(id=selected_schedule_id)
-
-                # Get students in the same course_section as the schedule
                 students_in_schedule = Account.objects.filter(
                     course_section_id=schedule_obj.course_section_id
                 ).order_by('last_name', 'first_name')
 
-                # Map attendance data: {student_id: {date: {'status': status, 'time_in': time_in, 'time_out': time_out}}}
                 attendance_data = defaultdict(lambda: defaultdict(dict))
                 for record in attendance_qs:
                     attendance_data[record.student.id][record.date] = {
@@ -2005,19 +2044,33 @@ def attendance_report_template(request):
                         'time_out': record.time_out
                     }
 
-                # Build date headers (max 8 dates)
+                # ---- Build date headers (max 8 dates)
                 date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
-                num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_date_columns = []
-                for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
+                num_empty_date_columns = [""] * (8 - len(date_headers))
 
+                # === NEW: Extract professor time in/out for each date ===
+                prof_in_list = []
+                prof_out_list = []
+                for d in date_headers:
+                    day_records = attendance_qs.filter(date=d)
+                    prof_in = ''
+                    prof_out = ''
+                    for record in day_records:
+                        if getattr(record, 'professor_time_in', None):
+                            try: prof_in = record.professor_time_in.strftime('%H:%M')
+                            except Exception: prof_in = str(record.professor_time_in)
+                        if getattr(record, 'professor_time_out', None):
+                            try: prof_out = record.professor_time_out.strftime('%H:%M')
+                            except Exception: prof_out = str(record.professor_time_out)
+                        if prof_in and prof_out:
+                            break
+                    prof_in_list.append(prof_in)
+                    prof_out_list.append(prof_out)
+                date_prof_pairs = list(zip(date_headers, zip(prof_in_list, prof_out_list)))
+                # =======================================================
 
                 attendance_table = []
                 for student in students_in_schedule:
-                    course_section_for_student = student.course_section
-                    # Build dates_statuses as a list of dicts containing all attendance info
                     dates_statuses = []
                     for date in date_headers:
                         attendance_info = attendance_data[student.id].get(date, {})
@@ -2026,49 +2079,26 @@ def attendance_report_template(request):
                             'time_in': attendance_info.get('time_in', ''),
                             'time_out': attendance_info.get('time_out', '')
                         })
-                    
-                    # Pad with empty dicts to always have 8 items
                     while len(dates_statuses) < 8:
                         dates_statuses.append({
                             'status': '',
                             'time_in': '',
                             'time_out': ''
                         })
-                    
-                        
                     row = {
-                        "student_id": student.user_id, 
+                        "student_id": student.user_id,
                         "name": f"{student.first_name} {student.last_name}",
                         "sex": student.sex,
-                        "course": course_section_for_student,
+                        "course": student.course_section,
                         "subject": schedule_obj.course_code,
                         "room": schedule_obj.room_assignment,
-                        "dates": dates_statuses,  # Always 8 items now
+                        "dates": dates_statuses,
                     }
                     attendance_table.append(row)
 
-                else:
-                    row = [""]
-                # Build date headers (max 8 dates)
-                date_headers = [d for d in attendance_dates if start_date <= d <= end_date][:8]
-                num_empty_date_column = 8 - len(date_headers)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_date_columns = []
-                for i in range(num_empty_date_column):
-                    num_empty_date_columns.append("")
-
                 num_empty_row = 40 - len(attendance_table)
-                #create a pseudo list just for the for loop in html to work
-                num_empty_rows = []
-                num_filled_rows = []
-                for i in range(num_empty_row):
-                    num_empty_rows.append("")
-
-                for i in range(len(attendance_table)):
-                    num_filled_rows.append("")
-
-                print(f"{len(num_empty_rows)}")
-                print(f"{len(num_filled_rows)}")
+                num_empty_rows = [""] * num_empty_row
+                num_filled_rows = [""] * len(attendance_table)
 
                 context = {
                     'attendance_data': attendance_data_attendance_report,
@@ -2078,27 +2108,29 @@ def attendance_report_template(request):
                     "selected_date_range": selected_date_range,
                     "attendance_table": attendance_table,
                     "date_headers": date_headers,
+                    "date_prof_pairs": date_prof_pairs,          # <- for your table header!
                     "num_empty_rows": num_empty_rows,
                     "num_filled_rows": num_filled_rows,
                     "num_empty_date_columns": num_empty_date_columns,
                 }
                 return render(request, "attendance_report_template.html", context)
-        else:
-    # If no valid date range selected or dates invalid, still render with schedules & date ranges
-            context = {
-                'attendance_data': attendance_data_attendance_report,
-                "schedules": schedules,
-                "date_ranges": date_ranges,
-                "selected_schedule_id": selected_schedule_id,
-                "attendance_table": [],
-                "date_headers": [],
-                "num_empty_rows": [""]*40,
-                "num_filled_rows": [],
-                "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
-            }
-            return render(request, "attendance_report_template.html", context)
 
-    # If no schedule selected at all, render with just schedules and empty date ranges
+        # If no valid date range, return with minimal data
+        context = {
+            'attendance_data': attendance_data_attendance_report,
+            "schedules": schedules,
+            "date_ranges": date_ranges,
+            "selected_schedule_id": selected_schedule_id,
+            "attendance_table": [],
+            "date_headers": [],
+            "date_prof_pairs": [],
+            "num_empty_rows": [""]*40,
+            "num_filled_rows": [],
+            "num_empty_date_columns": [""]*8,
+        }
+        return render(request, "attendance_report_template.html", context)
+
+    # If no schedule selected, blank results
     context = {
         'attendance_data': {"":"",'faculty_name': f"{instructor_account.first_name} {instructor_account.last_name}" if instructor_account else 'TBA',"":"","":"","":"","":""},
         "schedules": schedules,
@@ -2106,11 +2138,13 @@ def attendance_report_template(request):
         "selected_schedule_id": selected_schedule_id,
         "attendance_table": [],
         "date_headers": [],
+        "date_prof_pairs": [],
         "num_empty_rows": [""]*40,
         "num_filled_rows": [],
-        "num_empty_date_columns": ["", "", "", "", "", "", "", "", ],
+        "num_empty_date_columns": [""]*8,
     }
     return render(request, "attendance_report_template.html", context)
+
     
 
 from django.http import JsonResponse
@@ -2506,6 +2540,10 @@ def mobile_update_account(request, user_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+from collections import defaultdict
+from datetime import datetime
+from django.http import JsonResponse
+
 @instructor_or_admin_required
 @require_http_methods(["GET"])
 def get_attendance_data_api(request):
@@ -2523,10 +2561,7 @@ def get_attendance_data_api(request):
         except ClassSchedule.DoesNotExist:
             return JsonResponse({'error': 'Class schedule not found'}, status=404)
         
-        # Get all date ranges
-        attendance_dates = list(AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).values_list('date', flat=True).distinct().order_by('date'))
+        attendance_dates = list(AttendanceRecord.objects.filter(class_schedule=class_schedule).values_list('date', flat=True).distinct().order_by('date'))
         
         date_ranges = []
         for i in range(0, len(attendance_dates), 8):
@@ -2537,7 +2572,6 @@ def get_attendance_data_api(request):
                 'label': f'{start_date.strftime("%b %d, %Y")} - {end_date.strftime("%b %d, %Y")}'
             })
         
-        # If date range provided, build attendance table
         if date_range:
             try:
                 start_str, end_str = date_range.split('_to_')
@@ -2548,7 +2582,6 @@ def get_attendance_data_api(request):
         else:
             start_date = end_date = None
         
-        # Get date headers
         if start_date and end_date:
             dates_in_range = list(AttendanceRecord.objects.filter(
                 class_schedule=class_schedule,
@@ -2559,19 +2592,40 @@ def get_attendance_data_api(request):
         
         date_headers = [d.strftime('%m/%d') for d in dates_in_range]
         
-        # Get students and attendance
-        attendance_table = []
+        # --- New code to build professor time per date ---
+        prof_in_list = []
+        prof_out_list = []
+        attendance_qs = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule
+        ).select_related('student')
+        for d in dates_in_range:
+            day_records = attendance_qs.filter(date=d)
+            prof_in = ''
+            prof_out = ''
+            for record in day_records:
+                if getattr(record, 'professor_time_in', None):
+                    try:
+                        prof_in = record.professor_time_in.strftime('%H:%M')
+                    except Exception:
+                        prof_in = str(record.professor_time_in)
+                if getattr(record, 'professor_time_out', None):
+                    try:
+                        prof_out = record.professor_time_out.strftime('%H:%M')
+                    except Exception:
+                        prof_out = str(record.professor_time_out)
+                if prof_in and prof_out:
+                    break
+            prof_in_list.append(prof_in)
+            prof_out_list.append(prof_out)
+        prof_times = [f"Prof In: {prof_in_list[i]}<br>Prof Out: {prof_out_list[i]}" if prof_in_list[i] and prof_out_list[i] else "" for i in range(len(prof_in_list))]
+        # ------------------------------------------------------
+        
         students = Account.objects.filter(
             course_section=class_schedule.course_section,
             role='Student'
         ).order_by('last_name', 'first_name')
         
-        # Build attendance data map
         attendance_data = defaultdict(lambda: defaultdict(dict))
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule
-        ).select_related('student')
-        
         for record in attendance_qs:
             attendance_data[record.student.id][record.date] = {
                 'time_in': record.time_in,
@@ -2579,7 +2633,7 @@ def get_attendance_data_api(request):
                 'status': record.status
             }
         
-        # Build attendance table
+        attendance_table = []
         for student in students:
             student_data = {
                 'name': f'{student.last_name}, {student.first_name}',
@@ -2596,19 +2650,13 @@ def get_attendance_data_api(request):
                         'status': att['status']
                     })
                 else:
-                    student_data['dates'].append({
-                        'time_in': '',
-                        'time_out': '',
-                        'status': ''
-                    })
+                    student_data['dates'].append({'time_in': '', 'time_out': '', 'status': ''})
             
             attendance_table.append(student_data)
         
-        # Get class data
-        instructor_account = class_schedule.professor
         class_data = {
             'subject': class_schedule.course_title,
-            'faculty_name': f'{instructor_account.first_name} {instructor_account.last_name}' if instructor_account else 'TBA',
+            'faculty_name': f'{class_schedule.professor.first_name} {class_schedule.professor.last_name}' if class_schedule.professor else 'TBA',
             'course': class_schedule.course_code,
             'room': class_schedule.room_assignment,
             'year_section': class_schedule.course_section.section_code if class_schedule.course_section else 'N/A',
@@ -2619,10 +2667,11 @@ def get_attendance_data_api(request):
             'class_data': class_data,
             'date_ranges': date_ranges,
             'date_headers': date_headers,
+            'prof_times': prof_times,  # <- New key here
             'attendance_table': attendance_table,
             'student_count': len(attendance_table)
         })
-        
+    
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
@@ -2631,297 +2680,6 @@ def get_attendance_data_api(request):
             'error': f'Server error: {str(e)}',
             'trace': error_trace
         }, status=500)
-
-
-# for Docx Download
-from io import BytesIO
-from docx import Document
-from collections import defaultdict
-import os
-import re
-from datetime import datetime
-import logging
-from PyPDF2 import PdfMerger
-import subprocess
-import tempfile
-
-
-
-
-@instructor_or_admin_required
-def generate_attendance_docx(request, schedule_id):
-    """Generate DOCX → PDF, 60 students (Template1 + Template2) with professor times."""
-    logger = logging.getLogger(__name__)
-    logger.error(f"=== PDF Download Started for schedule_id: {schedule_id} ===")
-
-    try:
-        # ----------------- Parse date range -----------------
-        date_range = request.GET.get('date_range')
-        if not date_range:
-            logger.error("✗ No date range provided")
-            return HttpResponse(
-                '<h3>Date Range Required</h3><p>Please select a date range.</p>',
-                status=400
-            )
-
-        try:
-            logger.error(f"Raw date_range: '{date_range}'")
-            parts = date_range.split('to')
-            start_str = re.sub(r'[^0-9-]', '', parts[0].strip())
-            end_str = re.sub(r'[^0-9-]', '', parts[1].strip())
-            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-            date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
-            logger.error(f"✓ Parsed: {start_date} to {end_date}")
-        except Exception as e:
-            logger.error(f"✗ Invalid date: {str(e)}")
-            return HttpResponse(
-                f'<h3>Invalid Date Range</h3><p>{str(e)}</p>',
-                status=400
-            )
-
-        # ----------------- Load templates -----------------
-        template1_path = os.path.join(
-            settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx'
-        )
-        template2_path = os.path.join(
-            settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx'
-        )
-
-        if not os.path.exists(template1_path) or not os.path.exists(template2_path):
-            return HttpResponse("Templates not found", status=500)
-
-        logger.error("✓ Both templates loaded")
-
-        class_schedule = ClassSchedule.objects.get(id=schedule_id)
-
-        # ----------------- Build student list (max 60, dedup by name) -----------------
-        students_qs = Account.objects.filter(
-            course_section=class_schedule.course_section,
-            role='Student'
-        ).order_by('last_name', 'first_name')
-
-        seen_names = set()
-        students = []
-        for student in students_qs:
-            full_name = f"{student.last_name},{student.first_name}"
-            if full_name not in seen_names:
-                seen_names.add(full_name)
-                students.append(student)
-                if len(students) >= 60:
-                    break
-
-        logger.error(f"✓ {len(students)} students")
-
-        # ----------------- Dates & attendance data -----------------
-        attendance_dates = list(
-            AttendanceRecord.objects.filter(
-                class_schedule=class_schedule,
-                date__range=[start_date, end_date],
-                student__role='Student'
-            )
-            .values_list('date', flat=True)
-            .distinct()
-            .order_by('date')[:8]
-        )
-
-        attendance_qs = AttendanceRecord.objects.filter(
-            class_schedule=class_schedule,
-            date__range=[start_date, end_date],
-            student__role='Student'
-        ).select_related('student')
-
-        # Diagnostic Logging: verify we're getting the records (REMOVE ONCE CONFIRMED)
-        for rec in attendance_qs:
-            logger.error(
-                f"DB CHECK: id={rec.id} student_id={rec.student_id} date={rec.date} "
-                f"prof_in={rec.professor_time_in} prof_out={rec.professor_time_out}"
-            )
-
-        # Map: attendance_data[student_id][date] = {...}
-        attendance_data = defaultdict(lambda: defaultdict(dict))
-        for record in attendance_qs:
-            attendance_data[record.student.id][record.date] = {
-                'time_in': record.time_in,
-                'time_out': record.time_out,
-                'status': record.status,
-                'professor_time_in': record.professor_time_in,
-                'professor_time_out': record.professor_time_out,
-            }
-
-        logger.error(f"✓ {len(attendance_dates)} dates")
-
-        # ====================== BUILD ACTUAL PROFESSOR TIMES ==========================
-        prof_times = {}
-        for d in attendance_dates:
-            prof_str = ''
-            # Always get the first student record for this date (prof times are same for all rows that day)
-            rec = AttendanceRecord.objects.filter(
-                class_schedule=class_schedule,
-                date=d,
-                student__role='Student'
-            ).first()
-            if rec:
-                pti = rec.professor_time_in
-                pto = rec.professor_time_out
-                logger.error(f"PROF DEBUG: date={d} pti={pti} pto={pto}")
-                if pti and pto:
-                    prof_str = f"{pti.strftime('%H:%M')}-{pto.strftime('%H:%M')}"
-                else:
-                    logger.error(f"✗ Prof times NULL for {d} ({pti}, {pto})")
-            else:
-                logger.error(f"✗ NO AttendanceRecord found for {d}")
-            prof_times[d] = prof_str
-
-        students_template1 = students[0:40]   # 1–40
-        students_template2 = students[40:60]  # 41–60
-        logger.error(f"✓ Template1: {len(students_template1)}, Template2: {len(students_template2)}")
-
-        # ======================================================================
-        # TEMPLATE 1 (students 1–40)
-        # ======================================================================
-        doc1 = Document(template1_path)
-
-        replacements1 = {
-            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
-            '{{faculty_name}}': (
-                f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}"
-                if class_schedule.professor else "TBA"
-            ),
-            '{{course}}': (
-                class_schedule.course_section.course_name
-                if class_schedule.course_section else ""
-            ),
-            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
-            '{{year_section}}': (
-                class_schedule.course_section.section_name
-                if class_schedule.course_section else ""
-            ),
-            '{{schedule}}': (
-                f"{class_schedule.days} "
-                f"{class_schedule.time_in.strftime('%H:%M')}-"
-                f"{class_schedule.time_out.strftime('%H:%M')}"
-            ),
-        }
-
-        # Dates + professor times for Template 1
-        for i in range(1, 9):
-            if i - 1 < len(attendance_dates):
-                d = attendance_dates[i - 1]
-                replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
-                prof_time_value = prof_times.get(d, '')
-                replacements1[f'{{{{prof{i}}}}}'] = prof_time_value
-                logger.error(f"prof{i} ({d}): '{prof_time_value}'")
-            else:
-                replacements1[f'{{{{date{i}}}}}'] = ''
-                replacements1[f'{{{{prof{i}}}}}'] = ''
-
-        # generic {{prof}} – use first date if present
-        replacements1['{{prof}}'] = (
-            prof_times.get(attendance_dates[0], '') if attendance_dates else ''
-        )
-
-        # Student rows (1–40)
-        time_cells1 = set()
-        for i in range(1, 41):
-            if i - 1 < len(students_template1):
-                student = students_template1[i - 1]
-                replacements1[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
-                replacements1[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
-
-                for j in range(1, 9):
-                    key = f'{{{{student{i}_time{j}}}}}'
-                    if j - 1 < len(attendance_dates):
-                        d = attendance_dates[j - 1]
-                        if d in attendance_data[student.id]:
-                            att = attendance_data[student.id][d]
-                            if att['status'] in ['Present', 'Late']:
-                                time_in_str = (
-                                    att['time_in'].strftime('%H:%M')
-                                    if att['time_in'] else ''
-                                )
-                                time_out_str = (
-                                    att['time_out'].strftime('%H:%M')
-                                    if att['time_out'] else ''
-                                )
-                                if time_in_str and time_out_str:
-                                    replacements1[key] = f"{time_in_str} - {time_out_str}"
-                                    time_cells1.add(key)
-                                    continue
-                    replacements1[key] = ''
-            else:
-                # blank row
-                replacements1[f'{{{{student{i}_name}}}}'] = ''
-                replacements1[f'{{{{student{i}_sex}}}}'] = ''
-                for j in range(1, 9):
-                    replacements1[f'{{{{student{i}_time{j}}}}}'] = ''
-
-        logger.error(f"✓ Built {len(replacements1)} replacements for Template1")
-
-        # Apply replacements with font adjustments (tables only, as in your current code)
-        for table in doc1.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    cell_text = cell.text
-                    if '{{' in cell_text:
-                        for paragraph in cell.paragraphs:
-                            text = paragraph.text
-
-                            for key, value in replacements1.items():
-                                if key in text:
-                                    text = text.replace(key, str(value))
-
-                            if text != paragraph.text:
-                                paragraph.text = text
-
-                                # Font size adjustments based on content type
-                                if text.strip() in ['M', 'F']:
-                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
-
-                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(8)
-
-                                elif ' - ' in text and ':' in text:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(7)
-
-                                elif len(text) > 25:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(7)
-                                elif len(text) > 20:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(8)
-                                elif len(text) > 15:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(9)
-
-        logger.error("✓ Template1 replacements complete")
-
-        # Save first template doc to in-memory buffer
-        buffer = BytesIO()
-        doc1.save(buffer)
-        buffer.seek(0)
-
-        # Prepare filename (sanitize if needed)
-        sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
-        filename = f"Attendance_{sanitized_code}{date_range_str}_students1-60.docx"
-
-        # Return the buffer as response with proper content type
-        response = HttpResponse(
-            buffer.read(),
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
-
-    except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        logger.error(f"✗ ERROR: {error_msg}")
-        return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
 
 
 
@@ -3073,3 +2831,304 @@ def clear_students(request):
             'status': 'error',
             'message': str(e)
         }, status=500)
+    
+
+
+    
+    # for Docx Download
+from io import BytesIO
+from docx import Document
+from collections import defaultdict
+import os
+import re
+from datetime import datetime
+import logging
+from PyPDF2 import PdfMerger
+import subprocess
+import tempfile
+
+from django.http import HttpResponse
+from django.shortcuts import render, redirect
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from io import BytesIO
+from collections import defaultdict
+from datetime import datetime
+import re
+import os
+import logging
+
+@instructor_or_admin_required
+def generate_attendance_docx(request, schedule_id):
+    """Generate DOCX with up to 60 students. Template 2 only appears if >40 students."""
+    logger = logging.getLogger(__name__)
+    logger.error(f"=== DOCX Generation Started for schedule_id: {schedule_id} ===")
+
+    def apply_replacements_to_doc(doc, replacements):
+        """Apply replacements with font adjustments to document tables."""
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if '{{' in cell.text:
+                        for paragraph in cell.paragraphs:
+                            text = paragraph.text
+                            for key, value in replacements.items():
+                                if key in text:
+                                    text = text.replace(key, str(value))
+                            if text != paragraph.text:
+                                paragraph.text = text
+                                # Font adjustments for different content types
+                                if ':' in text and '-' in text and len(text) <= 11 and text.count(':') == 2:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif text.strip() in ['M', 'F']:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                elif ' - ' in text and ':' in text:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif len(text) > 25:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(7)
+                                elif len(text) > 20:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(8)
+                                elif len(text) > 15:
+                                    for run in paragraph.runs:
+                                        run.font.size = Pt(9)
+
+    try:
+        # Parse date range
+        date_range = request.GET.get('date_range')
+        if not date_range:
+            logger.error("✗ No date range provided")
+            return HttpResponse('<h3>Date Range Required</h3>', status=400)
+
+        try:
+            parts = date_range.split('to')
+            start_str = re.sub(r'[^0-9-]', '', parts[0].strip())
+            end_str = re.sub(r'[^0-9-]', '', parts[1].strip())
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+            date_range_str = f"_{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
+            logger.error(f"✓ Parsed dates: {start_date} to {end_date}")
+        except Exception as e:
+            logger.error(f"✗ Invalid date: {str(e)}")
+            return HttpResponse(f'<h3>Invalid Date Range</h3><p>{str(e)}</p>', status=400)
+
+        # Load templates
+        template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
+        if not os.path.exists(template1_path):
+            logger.error("✗ Template 1 not found")
+            return HttpResponse("Template 1 not found", status=500)
+        logger.error("✓ Template 1 loaded")
+
+        class_schedule = ClassSchedule.objects.get(id=schedule_id)
+
+        # Build student list (max 60)
+        students_qs = Account.objects.filter(
+            course_section=class_schedule.course_section,
+            role='Student'
+        ).order_by('last_name', 'first_name')
+        seen_names = set()
+        students = []
+        for student in students_qs:
+            full_name = f"{student.last_name},{student.first_name}"
+            if full_name not in seen_names:
+                seen_names.add(full_name)
+                students.append(student)
+                if len(students) >= 60:
+                    break
+        logger.error(f"✓ {len(students)} students loaded")
+
+        # Get attendance dates
+        attendance_dates = list(
+            AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date__range=[start_date, end_date],
+                student__role='Student'
+            ).values_list('date', flat=True).distinct().order_by('date')[:8]
+        )
+
+        # Get attendance records
+        attendance_qs = AttendanceRecord.objects.filter(
+            class_schedule=class_schedule,
+            date__range=[start_date, end_date],
+            student__role='Student'
+        ).select_related('student')
+
+        attendance_data = defaultdict(lambda: defaultdict(dict))
+        for record in attendance_qs:
+            attendance_data[record.student.id][record.date] = {
+                'time_in': record.time_in,
+                'time_out': record.time_out,
+                'status': record.status,
+            }
+        logger.error(f"✓ {len(attendance_dates)} dates with attendance")
+
+        # Build professor times
+        prof_times = {}
+        for d in attendance_dates:
+            prof_str = ''
+            rec = AttendanceRecord.objects.filter(
+                class_schedule=class_schedule,
+                date=d,
+                student__role='Student'
+            ).first()
+            if rec and rec.professor_time_in and rec.professor_time_out:
+                prof_str = f"{rec.professor_time_in.strftime('%H:%M')}-{rec.professor_time_out.strftime('%H:%M')}"
+            prof_times[d] = prof_str
+
+        students_template1 = students[0:40]
+        students_template2 = students[40:60]
+        
+        # 🔥 CHECK: Only use Template 2 if there are more than 40 students
+        use_template2 = len(students) > 40
+        logger.error(f"✓ Template1: {len(students_template1)} students, Template2: {len(students_template2)} students (Use Template2: {use_template2})")
+
+        # ====== TEMPLATE 1 (Students 1-40) ======
+        doc1 = Document(template1_path)
+        replacements1 = {
+            '{{subject}}': class_schedule.course_title or class_schedule.course_code,
+            '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
+            '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
+            '{{room_assignment}}': class_schedule.room_assignment or "TBA",
+            '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
+            '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
+        }
+
+        # Dates and professor times
+        for i in range(1, 9):
+            if i - 1 < len(attendance_dates):
+                d = attendance_dates[i - 1]
+                replacements1[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
+                replacements1[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
+            else:
+                replacements1[f'{{{{date{i}}}}}'] = ''
+                replacements1[f'{{{{prof{i}}}}}'] = ''
+
+        replacements1['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
+
+        # Students 1-40
+        for i in range(1, 41):
+            if i - 1 < len(students_template1):
+                student = students_template1[i - 1]
+                replacements1[f'{{{{student{i}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                replacements1[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
+                for j in range(1, 9):
+                    key = f'{{{{student{i}_time{j}}}}}'
+                    if j - 1 < len(attendance_dates):
+                        d = attendance_dates[j - 1]
+                        if d in attendance_data[student.id]:
+                            att = attendance_data[student.id][d]
+                            if att['status'] in ['Present', 'Late']:
+                                time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                if time_in_str and time_out_str:
+                                    replacements1[key] = f"{time_in_str} - {time_out_str}"
+                                    continue
+                    replacements1[key] = ''
+            else:
+                replacements1[f'{{{{student{i}_name}}}}'] = ''
+                replacements1[f'{{{{student{i}_sex}}}}'] = ''
+                for j in range(1, 9):
+                    replacements1[f'{{{{student{i}_time{j}}}}}'] = ''
+
+        apply_replacements_to_doc(doc1, replacements1)
+        logger.error(f"✓ Template1 populated")
+
+        # ====== TEMPLATE 2 (Students 41-60) - ONLY IF >40 STUDENTS ======
+        if use_template2:
+            if not os.path.exists(template2_path):
+                logger.error("✗ Template 2 not found but needed")
+                return HttpResponse("Template 2 not found", status=500)
+            
+            doc2 = Document(template2_path)
+            replacements2 = {
+                '{{subject}}': class_schedule.course_title or class_schedule.course_code,
+                '{{faculty_name}}': f"{class_schedule.professor.first_name} {class_schedule.professor.last_name}" if class_schedule.professor else "TBA",
+                '{{course}}': class_schedule.course_section.course_name if class_schedule.course_section else "",
+                '{{room_assignment}}': class_schedule.room_assignment or "TBA",
+                '{{year_section}}': class_schedule.course_section.section_name if class_schedule.course_section else "",
+                '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
+            }
+
+            # Dates and professor times
+            for i in range(1, 9):
+                if i - 1 < len(attendance_dates):
+                    d = attendance_dates[i - 1]
+                    replacements2[f'{{{{date{i}}}}}'] = d.strftime('%m/%d/%Y')
+                    replacements2[f'{{{{prof{i}}}}}'] = prof_times.get(d, '')
+                else:
+                    replacements2[f'{{{{date{i}}}}}'] = ''
+                    replacements2[f'{{{{prof{i}}}}}'] = ''
+
+            replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
+
+            # Students 41-60
+            for i in range(1, 21):
+                student_num = 40 + i
+                if i - 1 < len(students_template2):
+                    student = students_template2[i - 1]
+                    replacements2[f'{{{{student{student_num}_name}}}}'] = f"{student.last_name}, {student.first_name}"
+                    replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
+                    for j in range(1, 9):
+                        key = f'{{{{student{student_num}_time{j}}}}}'
+                        if j - 1 < len(attendance_dates):
+                            d = attendance_dates[j - 1]
+                            if d in attendance_data[student.id]:
+                                att = attendance_data[student.id][d]
+                                if att['status'] in ['Present', 'Late']:
+                                    time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
+                                    time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
+                                    if time_in_str and time_out_str:
+                                        replacements2[key] = f"{time_in_str} - {time_out_str}"
+                                        continue
+                        replacements2[key] = ''
+                else:
+                    replacements2[f'{{{{student{student_num}_name}}}}'] = ''
+                    replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
+                    for j in range(1, 9):
+                        replacements2[f'{{{{student{student_num}_time{j}}}}}'] = ''
+
+            apply_replacements_to_doc(doc2, replacements2)
+            logger.error(f"✓ Template2 populated")
+
+            # Merge Template 2 with Template 1
+            doc1.add_page_break()
+            for element in doc2.element.body:
+                doc1.element.body.append(element)
+            logger.error("✓ Template2 merged with Template1")
+        else:
+            logger.error("✓ Skipping Template2 (40 or fewer students)")
+
+        # Save to buffer
+        buffer = BytesIO()
+        doc1.save(buffer)
+        buffer.seek(0)
+
+        sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
+        page_suffix = "1-60" if use_template2 else "1-40"
+        filename = f"Attendance_{sanitized_code}{date_range_str}_students{page_suffix}.docx"
+
+        response = HttpResponse(
+            buffer.read(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        logger.error(f"✓ DOCX generated: {filename}")
+        return response
+
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        logger.error(f"✗ ERROR: {error_msg}")
+        return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)

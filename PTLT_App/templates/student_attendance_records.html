@@ -207,7 +207,7 @@
                 <button class="btn btn-sm btn-success" id="downloadBtn" onclick="downloadDocx()" disabled>
                     <i class="bi bi-download"></i> Download DOCX
                 </button>
-                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#csvImportModal">
+                <button class="btn btn-sm btn-warning me-2" data-bs-toggle="modal" data-bs-target="#csvImportModal">
                     <i class="bi bi-file-earmark-spreadsheet p4"></i> Import CSV
                 </button>
             </div>
@@ -466,12 +466,15 @@ document.getElementById('dateRangeSelect').addEventListener('change', function()
     fetch(`/api/attendance_data/?schedule=${selectedClassId}&date_range=${selectedDateRange}`)
         .then(r => r.json())
         .then(data => {
-            let headerHtml = '';
-            for(let i = 0; i < 8; i++) {
-                headerHtml += `<th class="border border-dark">${data.date_headers[i] || ''}</th>`;
-            }
-            document.getElementById('dateHeaderRow').innerHTML = headerHtml;
-            
+        let headerHtml = '';
+        for(let i = 0; i < 8; i++) {
+            const dateStr = data.date_headers[i] || '';
+            const prof = (data.prof_times && data.prof_times[i]) ? data.prof_times[i] : '';
+            headerHtml += `<th class="border border-dark text-center">${dateStr}<br>
+                <span style="font-size:10px;font-weight:normal;">${prof}</span></th>`;
+        }
+        document.getElementById('dateHeaderRow').innerHTML = headerHtml;
+
             let tableHtml = '';
             data.attendance_table.forEach((student, idx) => {
                 tableHtml += `<tr class="border border-dark">
