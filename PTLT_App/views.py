@@ -3046,6 +3046,11 @@ def generate_attendance_docx(request, schedule_id):
 
             apply_replacements_to_doc(doc2, replacements2)
             logger.error(f"✓ Template2 populated")
+            
+            template2_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template2.docx')
+            doc2 = sync_page_settings_from_template(doc2, template2_path)
+            logger.error(f"✓ Template2 page settings synced")
+
 
             # Merge Template 2 with Template 1
             doc1.add_page_break()
@@ -3056,20 +3061,17 @@ def generate_attendance_docx(request, schedule_id):
             logger.error("✓ Skipping Template2 (40 or fewer students)")
 
         # Save to buffer
-        buffer = BytesIO()
-        doc1.save(buffer)
-        buffer.seek(0)
+        # Sync page settings from template to match perfect formatting
+        template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
+        doc1 = sync_page_settings_from_template(doc1, template1_path)
 
-        sanitized_code = re.sub(r'[^a-zA-Z0-9_-]', '', str(class_schedule.course_code))
-        page_suffix = "1-60" if use_template2 else "1-40"
-        filename = f"Attendance_{sanitized_code}{date_range_str}_students{page_suffix}.docx"
-
+        # Save to temp file (for potential PDF conversion later)
         with NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
             doc1.save(tmp.name)
             docx_path = tmp.name
-            logger.error(f"✓ DOCX temp file created: {docx_path}")
 
-        return docx_path
+        return docx_path  # Return path instead of HttpResponse
+
 
     except Exception as e:
         import traceback
@@ -3077,35 +3079,37 @@ def generate_attendance_docx(request, schedule_id):
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
     
-
 @instructor_or_admin_required
 @require_POST
 def download_attendance_pdf(request):
+    """Download attendance as DOCX (perfect formatting)"""
     schedule_id = request.POST.get('schedule_id')
     date_range = request.POST.get('date_range')
     
     if not schedule_id or not date_range:
-        return JsonResponse({'error': 'Missing schedule_id or date_range'}, status=400)
+        return JsonResponse({'error': 'Missing data'}, status=400)
     
     try:
-        # Add date_range to request.GET so generate_attendance_docx can use it
-        from django.http import QueryDict
         request.GET = request.GET.copy()
         request.GET['date_range'] = date_range
         
-        # Generate DOCX file (returns file path now)
+        # Generate DOCX file (with synced page settings)
         docx_path = generate_attendance_docx(request, schedule_id)
         
-        # Convert to PDF
-        pdf_bytes = convert_docx_to_pdf(docx_path)
+        # Read the file
+        with open(docx_path, 'rb') as f:
+            docx_bytes = f.read()
         
         # Clean up temp file
         if os.path.exists(docx_path):
             os.remove(docx_path)
         
-        # Return PDF
-        response = HttpResponse(pdf_bytes, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.pdf"'
+        # Return as DOCX
+        response = HttpResponse(
+            docx_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.docx"'
         return response
     
     except Exception as e:
@@ -3115,7 +3119,6 @@ def download_attendance_pdf(request):
             'trace': traceback.format_exc()
         }, status=500)
 
-import subprocess
 
 
 
@@ -3161,3 +3164,44 @@ def convert_docx_to_pdf(docx_path):
     
     except Exception as e:
         raise Exception(f"PDF conversion failed: {str(e)}")
+    
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.section import WD_ORIENT
+
+def sync_page_settings_from_template(generated_doc, template_path):
+    """
+    Copy page layout settings from template to generated document
+    This ensures consistent page sizing and margins
+    """
+    try:
+        template_doc = Document(template_path)
+        template_section = template_doc.sections[0]
+        
+        # Get generated doc section
+        gen_section = generated_doc.sections[0]
+        
+        # Sync page size
+        gen_section.page_width = template_section.page_width
+        gen_section.page_height = template_section.page_height
+        
+        # Sync margins (in twips)
+        gen_section.top_margin = template_section.top_margin
+        gen_section.bottom_margin = template_section.bottom_margin
+        gen_section.left_margin = template_section.left_margin
+        gen_section.right_margin = template_section.right_margin
+        
+        # Sync header/footer distance
+        gen_section.header_distance = template_section.header_distance
+        gen_section.footer_distance = template_section.footer_distance
+        
+        print(f"✓ Synced page settings from template")
+        print(f"  Page size: {gen_section.page_width.inches}\" x {gen_section.page_height.inches}\"")
+        print(f"  Margins - Top: {gen_section.top_margin.inches}\", Bottom: {gen_section.bottom_margin.inches}\"")
+        
+        return generated_doc
+    
+    except Exception as e:
+        print(f"Warning: Could not sync page settings: {str(e)}")
+        return generated_doc
+
