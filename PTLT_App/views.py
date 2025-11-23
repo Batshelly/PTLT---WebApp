@@ -2993,6 +2993,7 @@ def generate_attendance_docx(request, schedule_id):
             '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
         }
 
+        # Dates and professor times
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
@@ -3004,6 +3005,7 @@ def generate_attendance_docx(request, schedule_id):
 
         replacements1['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
+        # Students 1-40
         for i in range(1, 41):
             if i - 1 < len(students_template1):
                 student = students_template1[i - 1]
@@ -3031,7 +3033,7 @@ def generate_attendance_docx(request, schedule_id):
         apply_replacements_to_doc(doc1, replacements1)
         logger.error(f"✓ Template1 populated")
 
-        # ====== TEMPLATE 2 (Students 41-60) - CORRECTED ======
+        # ====== TEMPLATE 2 (Students 41-60) - SAME LOGIC AS TEMPLATE 1 ======
         doc2 = Document(template2_path)
         replacements2 = {
             '{{subject}}': class_schedule.course_title or class_schedule.course_code,
@@ -3042,6 +3044,7 @@ def generate_attendance_docx(request, schedule_id):
             '{{schedule}}': f"{class_schedule.days} {class_schedule.time_in.strftime('%H:%M')}-{class_schedule.time_out.strftime('%H:%M')}",
         }
 
+        # Dates and professor times (SAME AS TEMPLATE 1)
         for i in range(1, 9):
             if i - 1 < len(attendance_dates):
                 d = attendance_dates[i - 1]
@@ -3053,12 +3056,12 @@ def generate_attendance_docx(request, schedule_id):
 
         replacements2['{{prof}}'] = prof_times.get(attendance_dates[0], '') if attendance_dates else ''
 
-        # 🔥 KEY FIX: Use student numbers 41-60 in placeholders
-        for i in range(1, 21):  # Loop 20 times for students 41-60
-            student_num = 40 + i  # 41, 42, 43, ..., 60
+        # Students 41-60 (IDENTICAL LOGIC TO TEMPLATE 1, just different numbering)
+        for i in range(1, 21):  # Loop 20 times
+            student_num = 40 + i  # Converts to 41, 42, ..., 60
             if i - 1 < len(students_template2):
                 student = students_template2[i - 1]
-                logger.error(f"Template2 row {i}: Student {student_num} = {student.last_name}, {student.first_name}")
+                logger.error(f"Template2: Student {student_num} = {student.last_name}, {student.first_name}")
                 replacements2[f'{{{{student{student_num}_name}}}}'] = f"{student.last_name}, {student.first_name}"
                 replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
                 for j in range(1, 9):
@@ -3075,7 +3078,6 @@ def generate_attendance_docx(request, schedule_id):
                                     continue
                     replacements2[key] = ''
             else:
-                # No student - clear row
                 replacements2[f'{{{{student{student_num}_name}}}}'] = ''
                 replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
                 for j in range(1, 9):
