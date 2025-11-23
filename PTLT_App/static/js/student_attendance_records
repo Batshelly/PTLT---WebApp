@@ -165,7 +165,7 @@ function downloadPDF() {
     form.method = 'POST';
     form.action = '/download-attendance-pdf/';
     
-    // Get CSRF token from the page
+    // Get CSRF token
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
     
     form.innerHTML = `
@@ -177,11 +177,10 @@ function downloadPDF() {
     document.body.appendChild(form);
     form.submit();
     
-    // Reset button after 2 seconds (form submission will trigger download)
+    // Reset button after 2 seconds
     setTimeout(() => {
         downloadBtn.innerHTML = originalHtml;
         downloadBtn.disabled = false;
         document.body.removeChild(form);
     }, 2000);
 }
-

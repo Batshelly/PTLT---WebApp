@@ -92,63 +92,6 @@ from PyPDF2 import PdfMerger
 
 
 
-
-
-def convert_docx_to_pdf_railway(docx_path, output_dir):
-    """
-    Convert DOCX to PDF optimized for Railway deployment.
-
-    - Sets HOME to /tmp (LibreOffice requirement)
-    - Uses --norestore to avoid startup dialogs
-    - 60-second timeout is enforced
-    - Validates PDF file was actually created and is non-empty
-
-    Args:
-        docx_path: Path to source DOCX file
-        output_dir: Directory for PDF output
-
-    Returns:
-        Path to generated PDF file
-
-    Raises:
-        Exception: If conversion fails or times out
-    """
-    env = os.environ.copy()
-    env['HOME'] = '/tmp'
-    env['SAL_NO_STARTUP_WIZARD'] = '1'
-
-    pdf_path = os.path.splitext(docx_path)[0] + '.pdf'
-    logger.error(f"Converting {os.path.basename(docx_path)} → PDF")
-
-    try:
-        subprocess.run([
-            'libreoffice',
-            '--headless',
-            '--norestore',
-            '--convert-to', 'pdf',
-            '--outdir', output_dir,
-            docx_path
-        ], check=True, capture_output=True, timeout=60, env=env)
-
-        # Validate output was created and is not empty
-        if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"PDF not created at {pdf_path}")
-        if os.path.getsize(pdf_path) == 0:
-            raise ValueError("PDF file is empty")
-
-        logger.error(f"✓ PDF created: {os.path.basename(pdf_path)}")
-        return pdf_path
-
-    except subprocess.TimeoutExpired:
-        logger.error("✗ Conversion timeout (>60s)")
-        raise Exception("LibreOffice conversion timeout")
-
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "Unknown error"
-        logger.error(f"✗ Conversion failed: {stderr}")
-        raise Exception(f"LibreOffice error: {stderr}")
-
-
 def admin_required(view_func):
     """Decorator for admin-only views - handles both AJAX and regular requests"""
     @wraps(view_func)
@@ -3139,20 +3082,28 @@ def generate_attendance_docx(request, schedule_id):
 @require_POST
 def download_attendance_pdf(request):
     schedule_id = request.POST.get('schedule_id')
-    if not schedule_id:
-        return JsonResponse({'error': 'No schedule_id provided'}, status=400)
+    date_range = request.POST.get('date_range')
+    
+    if not schedule_id or not date_range:
+        return JsonResponse({'error': 'Missing schedule_id or date_range'}, status=400)
     
     try:
-        # Generate DOCX file and retrieve file path
-        docx_path = generate_attendance_docx_file(request, schedule_id)
+        # Add date_range to request.GET so generate_attendance_docx can use it
+        from django.http import QueryDict
+        request.GET = request.GET.copy()
+        request.GET['date_range'] = date_range
+        
+        # Generate DOCX file (returns file path now)
+        docx_path = generate_attendance_docx(request, schedule_id)
         
         # Convert to PDF
         pdf_bytes = convert_docx_to_pdf(docx_path)
         
-        # Clean up temp DOCX file
+        # Clean up temp file
         if os.path.exists(docx_path):
             os.remove(docx_path)
         
+        # Return PDF
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="attendance_{schedule_id}.pdf"'
         return response
@@ -3163,3 +3114,44 @@ def download_attendance_pdf(request):
             'error': str(e),
             'trace': traceback.format_exc()
         }, status=500)
+
+
+def convert_docx_to_pdf(docx_path):
+    """Convert DOCX to PDF using intermediate HTML conversion"""
+    try:
+        from docx import Document
+        doc = Document(docx_path)
+        html_content = docx_to_html(doc)
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        return pdf_bytes
+    except Exception as e:
+        raise Exception(f"PDF conversion failed: {str(e)}")
+
+from weasyprint import HTML
+
+def docx_to_html(doc):
+    """Convert DOCX paragraphs and tables to HTML"""
+    html = ['<html><head><meta charset="utf-8"><style>']
+    html.append('body { font-family: Arial, sans-serif; margin: 20px; }')
+    html.append('table { border-collapse: collapse; width: 100%; margin: 20px 0; }')
+    html.append('td, th { border: 1px solid black; padding: 8px; text-align: left; }')
+    html.append('th { background-color: #f0f0f0; font-weight: bold; }')
+    html.append('</style></head><body>')
+    
+    for element in doc.element.body:
+        if element.tag.endswith('p'):
+            text = ''.join(node.text for node in element.iter() if node.text)
+            if text.strip():
+                html.append(f'<p>{text}</p>')
+        elif element.tag.endswith('tbl'):
+            html.append('<table>')
+            for row in element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tr'):
+                html.append('<tr>')
+                for cell in row.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tc'):
+                    cell_text = ''.join(node.text for node in cell.iter() if node.text)
+                    html.append(f'<td>{cell_text}</td>')
+                html.append('</tr>')
+            html.append('</table>')
+    
+    html.append('</body></html>')
+    return ''.join(html)
