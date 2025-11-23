@@ -3078,7 +3078,7 @@ def generate_attendance_docx(request, schedule_id):
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
-    @instructor_or_admin_required
+@instructor_or_admin_required
 @require_POST
 def download_attendance_pdf(request):
     """Download attendance as PDF (with LibreOffice conversion)"""
