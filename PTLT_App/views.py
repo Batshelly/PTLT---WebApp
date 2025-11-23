@@ -2829,26 +2829,26 @@ def generate_attendance_docx(request, schedule_id):
                                 # Font adjustments for different content types
                                 if ':' in text and '-' in text and len(text) <= 11 and text.count(':') == 2:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(7)
+                                        run.font.size = Pt(5)
                                 elif text.strip() in ['M', 'F']:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(9)
+                                        run.font.size = Pt(8)
                                 elif '/' in text and len(text) <= 10 and text[0].isdigit():
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(8)
+                                        run.font.size = Pt(7)
                                 elif ' - ' in text and ':' in text:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(7)
+                                        run.font.size = Pt(6)
                                 elif len(text) > 25:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(7)
+                                        run.font.size = Pt(6)
                                 elif len(text) > 20:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(8)
+                                        run.font.size = Pt(7)
                                 elif len(text) > 15:
                                     for run in paragraph.runs:
-                                        run.font.size = Pt(9)
+                                        run.font.size = Pt(8)
 
     try:
         # Parse date range
