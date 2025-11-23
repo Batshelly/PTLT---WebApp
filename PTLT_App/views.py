@@ -3115,43 +3115,34 @@ def download_attendance_pdf(request):
             'trace': traceback.format_exc()
         }, status=500)
 
+import subprocess
 
 def convert_docx_to_pdf(docx_path):
-    """Convert DOCX to PDF using intermediate HTML conversion"""
+    """Convert DOCX to PDF using LibreOffice headless mode"""
     try:
-        from docx import Document
-        doc = Document(docx_path)
-        html_content = docx_to_html(doc)
-        pdf_bytes = HTML(string=html_content).write_pdf()
+        pdf_path = docx_path.replace('.docx', '.pdf')
+        
+        # Use LibreOffice to convert
+        result = subprocess.run([
+            'libreoffice',
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', '/tmp',
+            docx_path
+        ], capture_output=True, text=True, timeout=30)
+        
+        if result.returncode != 0:
+            raise Exception(f"LibreOffice conversion failed: {result.stderr}")
+        
+        # Read the converted PDF
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        
+        # Clean up PDF file
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+        
         return pdf_bytes
+    
     except Exception as e:
         raise Exception(f"PDF conversion failed: {str(e)}")
-
-from weasyprint import HTML
-
-def docx_to_html(doc):
-    """Convert DOCX paragraphs and tables to HTML"""
-    html = ['<html><head><meta charset="utf-8"><style>']
-    html.append('body { font-family: Arial, sans-serif; margin: 20px; }')
-    html.append('table { border-collapse: collapse; width: 100%; margin: 20px 0; }')
-    html.append('td, th { border: 1px solid black; padding: 8px; text-align: left; }')
-    html.append('th { background-color: #f0f0f0; font-weight: bold; }')
-    html.append('</style></head><body>')
-    
-    for element in doc.element.body:
-        if element.tag.endswith('p'):
-            text = ''.join(node.text for node in element.iter() if node.text)
-            if text.strip():
-                html.append(f'<p>{text}</p>')
-        elif element.tag.endswith('tbl'):
-            html.append('<table>')
-            for row in element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tr'):
-                html.append('<tr>')
-                for cell in row.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tc'):
-                    cell_text = ''.join(node.text for node in cell.iter() if node.text)
-                    html.append(f'<td>{cell_text}</td>')
-                html.append('</tr>')
-            html.append('</table>')
-    
-    html.append('</body></html>')
-    return ''.join(html)
