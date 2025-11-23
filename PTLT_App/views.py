@@ -59,7 +59,8 @@ from .models import ClassSchedule
 from .models import AttendanceRecord
 from .models import Semester
 from .models import AccountUploadNotification
-
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from collections import defaultdict
 from django.utils.dateparse import parse_date
 
@@ -3064,6 +3065,11 @@ def generate_attendance_docx(request, schedule_id):
         # Sync page settings from template to match perfect formatting
         template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
         doc1 = sync_page_settings_from_template(doc1, template1_path)
+        logger.error(f"✓ Page settings synced from template1")
+
+        # Adjust cell widths to prevent line breaking
+        doc1 = adjust_table_cell_widths(doc1)
+        logger.error(f"✓ Table cell widths adjusted")
 
         # Save to temp file (for potential PDF conversion later)
         with NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
@@ -3078,6 +3084,7 @@ def generate_attendance_docx(request, schedule_id):
         error_msg = traceback.format_exc()
         logger.error(f"✗ ERROR: {error_msg}")
         return HttpResponse(f'<h3>Error</h3><pre>{error_msg}</pre>', status=500)
+    
 @instructor_or_admin_required
 @require_POST
 def download_attendance_pdf(request):
@@ -3201,3 +3208,44 @@ def sync_page_settings_from_template(generated_doc, template_path):
         print(f"Warning: Could not sync page settings: {str(e)}")
         return generated_doc
 
+def adjust_table_cell_widths(doc):
+    """Adjust table cell widths to prevent line breaking"""
+    from docx.shared import Inches
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    
+    for table in doc.tables:
+        # Set table width to full page width
+        tbl = table._element
+        tblPr = tbl.tblPr
+        if tblPr is None:
+            tblPr = OxmlElement('w:tblPr')
+            tbl.insert(0, tblPr)
+        
+        # Set table width
+        tblW = OxmlElement('w:tblW')
+        tblW.set(qn('w:w'), '5000')
+        tblW.set(qn('w:type'), 'auto')
+        tblPr.append(tblW)
+        
+        # Adjust individual cell widths
+        for row in table.rows:
+            for idx, cell in enumerate(row.cells):
+                # Determine width based on column position
+                if idx == 0:  # No. column
+                    cell.width = Inches(0.4)
+                elif idx == 1:  # Name column
+                    cell.width = Inches(1.5)
+                elif idx == 2:  # Sex column
+                    cell.width = Inches(0.4)
+                else:  # Date/time columns
+                    cell.width = Inches(0.7)
+                
+                # Prevent text wrapping in cells
+                tcPr = cell._element.get_or_add_tcPr()
+                tcW = OxmlElement('w:tcW')
+                tcW.set(qn('w:w'), str(int(cell.width.twips)) if cell.width else '1000')
+                tcW.set(qn('w:type'), 'dxa')
+                tcPr.append(tcW)
+    
+    return doc
