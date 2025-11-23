@@ -531,7 +531,7 @@ function clearTable() {
     document.getElementById('studentCount').style.display = 'none';
 }
 
-function downloadDocx() {
+function downloadPDF() {
     if (!selectedClassId || !selectedDateRange) { 
         alert('Please select both a class and date range first!'); 
         return; 
@@ -539,39 +539,34 @@ function downloadDocx() {
     
     const downloadBtn = document.getElementById('downloadBtn');
     const originalHtml = downloadBtn.innerHTML;
-    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Downloading...';
+    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating PDF...';
     downloadBtn.disabled = true;
     
-    let url = `/attendance/docx/${selectedClassId}/`;
-    if (selectedDateRange) {
-        url += `?date_range=${selectedDateRange}`;
-    }
+    // Create form for POST request
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/download-attendance-pdf/';
     
-    fetch(url)
-        .then(response => {
-            if (!response.ok) throw new Error('Download failed');
-            return response.blob();
-        })
-        .then(blob => {
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.download = `Attendance_${selectedClassId}_${selectedDateRange}.docx`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(downloadUrl);
-            
-            downloadBtn.innerHTML = originalHtml;
-            downloadBtn.disabled = false;
-        })
-        .catch(err => {
-            console.error('Download error:', err);
-            alert('Download failed. Please try again.');
-            downloadBtn.innerHTML = originalHtml;
-            downloadBtn.disabled = false;
-        });
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    form.innerHTML = `
+        <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+        <input type="hidden" name="schedule_id" value="${selectedClassId}">
+        <input type="hidden" name="date_range" value="${selectedDateRange}">
+    `;
+    
+    document.body.appendChild(form);
+    form.submit();
+    
+    // Reset button after 2 seconds
+    setTimeout(() => {
+        downloadBtn.innerHTML = originalHtml;
+        downloadBtn.disabled = false;
+        document.body.removeChild(form);
+    }, 2000);
 }
+
 
 
 // CSV Upload Handler
