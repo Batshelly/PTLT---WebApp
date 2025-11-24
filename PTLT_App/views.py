@@ -3053,7 +3053,7 @@ def generate_attendance_docx(request, schedule_id):
             logger.error(f"✓ Template2 page settings synced")
             
             doc2 = remove_header_from_doc(doc2)
-            logger.error("✓ Header removed from Template2")
+            logger.error("✓ Header/footer removed from Template2")
 
 
             # Merge Template 2 with Template 1
@@ -3064,8 +3064,7 @@ def generate_attendance_docx(request, schedule_id):
         else:
             logger.error("✓ Skipping Template2 (40 or fewer students)")
             
-        doc1 = remove_header_from_doc(doc1)
-        logger.error(f"✓ Duplicate headers removed")
+        
         # Save to buffer
         # Sync page settings from template to match perfect formatting
         template1_path = os.path.join(settings.BASE_DIR, 'PTLT_App', 'templates', 'attendance_template.docx')
@@ -3256,20 +3255,20 @@ def adjust_table_cell_widths(doc):
     return doc
 
 def remove_header_from_doc(doc):
-    """Remove header section from document to avoid duplication"""
+    """Remove header section entirely from document"""
     try:
         for section in doc.sections:
-            # Clear header
+            # Remove header
             header = section.header
-            for paragraph in header.paragraphs:
-                p = paragraph._element
-                p.getparent().remove(p)
-            # Clear footer too
+            header_element = header._element
+            header_element.getparent().remove(header_element)
+            
+            # Remove footer too
             footer = section.footer
-            for paragraph in footer.paragraphs:
-                p = paragraph._element
-                p.getparent().remove(p)
-        return doc
+            footer_element = footer._element
+            footer_element.getparent().remove(footer_element)
     except Exception as e:
-        print(f"Warning: Could not remove header: {str(e)}")
-        return doc
+        print(f"Warning: Could not remove header/footer: {str(e)}")
+    
+    return doc
+
