@@ -3255,20 +3255,31 @@ def adjust_table_cell_widths(doc):
     return doc
 
 def remove_header_from_doc(doc):
-    """Remove header section entirely from document"""
+    """Remove all header and footer content from document"""
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
         for section in doc.sections:
-            # Remove header
-            header = section.header
-            header_element = header._element
-            header_element.getparent().remove(header_element)
+            # Remove all header content
+            for paragraph in list(section.header.paragraphs):
+                p = paragraph._element
+                if p.getparent() is not None:
+                    p.getparent().remove(p)
             
-            # Remove footer too
-            footer = section.footer
-            footer_element = footer._element
-            footer_element.getparent().remove(footer_element)
-    except Exception as e:
-        print(f"Warning: Could not remove header/footer: {str(e)}")
+            # Remove all footer content  
+            for paragraph in list(section.footer.paragraphs):
+                p = paragraph._element
+                if p.getparent() is not None:
+                    p.getparent().remove(p)
+        
+        logger.error("✓ Header/footer cleared")
+        return doc
     
-    return doc
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Warning: Header/footer removal issue: {str(e)}")
+        return doc
+
 
