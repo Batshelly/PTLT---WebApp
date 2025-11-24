@@ -3175,11 +3175,10 @@ def convert_docx_to_pdf(docx_path):
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.section import WD_ORIENT
-
 def sync_page_settings_from_template(generated_doc, template_path):
     """
     Copy page layout settings from template to generated document
-    This ensures consistent page sizing and margins
+    This ensures consistent page sizing and margins (WITHOUT copying headers)
     """
     try:
         template_doc = Document(template_path)
@@ -3188,7 +3187,7 @@ def sync_page_settings_from_template(generated_doc, template_path):
         # Get generated doc section
         gen_section = generated_doc.sections[0]
         
-        # Sync page size
+        # Sync ONLY page size and margins (not headers/footers)
         gen_section.page_width = template_section.page_width
         gen_section.page_height = template_section.page_height
         
@@ -3202,15 +3201,21 @@ def sync_page_settings_from_template(generated_doc, template_path):
         gen_section.header_distance = template_section.header_distance
         gen_section.footer_distance = template_section.footer_distance
         
-        print(f"✓ Synced page settings from template")
-        print(f"  Page size: {gen_section.page_width.inches}\" x {gen_section.page_height.inches}\"")
-        print(f"  Margins - Top: {gen_section.top_margin.inches}\", Bottom: {gen_section.bottom_margin.inches}\"")
+        # DO NOT copy header/footer sections - keep existing ones
+        # DO NOT do: gen_section.header = template_section.header
+        
+        logger = logging.getLogger(__name__)
+        logger.error(f"✓ Synced page settings from template")
+        logger.error(f"  Page size: {gen_section.page_width.inches}\" x {gen_section.page_height.inches}\"")
+        logger.error(f"  Margins - Top: {gen_section.top_margin.inches}\", Bottom: {gen_section.bottom_margin.inches}\"")
         
         return generated_doc
     
     except Exception as e:
-        print(f"Warning: Could not sync page settings: {str(e)}")
+        logger = logging.getLogger(__name__)
+        logger.error(f"Warning: Could not sync page settings: {str(e)}")
         return generated_doc
+
 
 def adjust_table_cell_widths(doc):
     """Adjust table cell widths to prevent line breaking"""
