@@ -169,12 +169,15 @@ def login_view(request):
     # Check if any semester ended and not archived yet
     today = timezone.now().date()
     semester_to_archive = Semester.objects.filter(end_date__lt=today, is_archived=False).first()
-
     if semester_to_archive:
         print("Will archive now.")
-        # Call your archive function
-        archived_count = archive_semester_data(semester_to_archive)
-        print(f"Archived {archived_count} records.")
+        try:
+            archived_count = archive_semester_data(semester_to_archive)
+            print(f"Archived {archived_count} records.")
+        except Exception as e:
+            # Don't crash login page due to bad attendance data
+            logger.error(f"Archive failed for semester {semester_to_archive}: {e}")
+            print(f"Archive error (non-fatal): {e}")
     else:
         print("No archive needed at this time.")
 
