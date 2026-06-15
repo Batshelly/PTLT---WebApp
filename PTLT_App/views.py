@@ -2982,9 +2982,9 @@ def generate_attendance_docx(request, schedule_id):
                                 time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                                 time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                 if time_in_str and time_out_str:
-                                    replacements1[key] = f'{time_in_str} - {time_out_str}'
-                                else:
-                                    replacements1[key] = ''
+                                    value = f"{time_in_str} - {time_out_str}".strip(' -').strip()
+                                    continue
+                    replacements1[key] = value
             else:
                 replacements1[f'{{{{student{i}_name}}}}'] = ''
                 replacements1[f'{{{{student{i}_sex}}}}'] = ''
@@ -3039,9 +3039,9 @@ def generate_attendance_docx(request, schedule_id):
                                     time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                                     time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                     if time_in_str and time_out_str:
-                                        replacements2[key] = f'{time_in_str} - {time_out_str}'
-                                    else:
-                                        replacements2[key] = ''
+                                        value = f"{time_in_str} - {time_out_str}".strip(' -').strip()
+                                        continue
+                        replacements2[key] = value
                 else:
                     replacements2[f'{{{{student{student_num}_name}}}}'] = ''
                     replacements2[f'{{{{student{student_num}_sex}}}}'] = ''
