@@ -2681,27 +2681,40 @@ def get_attendance_data_api(request):
                 start_str, end_str = date_range.split('_to_')
                 start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-                
-                dates_in_range = AttendanceRecord.objects.filter(
+
+                dates_in_range = list(AttendanceRecord.objects.filter(
                     class_schedule=class_schedule,
                     date__range=[start_date, end_date]
-                ).values_list('date', flat=True).distinct().order_by('date')
-                
-                date_headers = [d.strftime('%m/%d') for d in list(dates_in_range)[:8]]
-                
+                ).values_list('date', flat=True).distinct().order_by('date')[:8])
+
+                date_headers = [d.strftime('%m/%d') for d in dates_in_range]
+
+                # Build prof_times list
+                prof_times = []
+                for d in dates_in_range:
+                    rec = AttendanceRecord.objects.filter(
+                        class_schedule=class_schedule,
+                        date=d,
+                        student__role='Student'
+                    ).first()
+                    if rec and rec.professor_time_in and rec.professor_time_out:
+                        prof_times.append(f"{rec.professor_time_in.strftime('%H:%M')}-{rec.professor_time_out.strftime('%H:%M')}")
+                    else:
+                        prof_times.append('')
+
                 students = Account.objects.filter(
                     course_section=class_schedule.course_section,
                     role='Student'
                 ).order_by('last_name', 'first_name')
-                
+
                 for student in students:
                     student_data = {
                         'name': f"{student.last_name}, {student.first_name}",
                         'sex': student.sex or '',
                         'dates': []
                     }
-                    
-                    for date in list(dates_in_range)[:8]:
+
+                    for date in dates_in_range:
                         try:
                             record = AttendanceRecord.objects.get(
                                 class_schedule=class_schedule,
@@ -2715,16 +2728,19 @@ def get_attendance_data_api(request):
                             })
                         except AttendanceRecord.DoesNotExist:
                             student_data['dates'].append({'time_in': '', 'time_out': '', 'status': ''})
-                    
+
                     attendance_table.append(student_data)
-                
+
             except (ValueError, TypeError):
-                pass
-        
+                prof_times = []
+        else:
+            prof_times = []
+
         return JsonResponse({
             'class_data': class_data,
             'date_ranges': date_ranges,
             'date_headers': date_headers,
+            'prof_times': prof_times,
             'attendance_table': attendance_table,
             'student_count': len(attendance_table)
         })
