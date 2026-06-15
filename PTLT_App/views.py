@@ -3109,6 +3109,9 @@ def download_attendance_pdf(request):
         # Generate DOCX file (with synced page settings)
         docx_path = generate_attendance_docx(request, schedule_id)
         
+        if isinstance(docx_path, HttpResponse):
+            return docx_path
+        
         # Convert DOCX to PDF using LibreOffice
         pdf_bytes = convert_docx_to_pdf(docx_path)
         
