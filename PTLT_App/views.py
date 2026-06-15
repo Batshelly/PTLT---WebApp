@@ -2817,42 +2817,48 @@ def generate_attendance_docx(request, schedule_id):
     logger.error(f"=== DOCX Generation Started for schedule_id: {schedule_id} ===")
 
     def apply_replacements_to_doc(doc, replacements):
-        """Apply replacements with font adjustments to document tables."""
+        """Apply replacements handling split runs in Word table cells."""
+
+        def process_paragraph(paragraph):
+            full_text = ''.join(run.text for run in paragraph.runs)
+            if '{{' not in full_text:
+                return
+            new_text = full_text
+            for key, value in replacements.items():
+                new_text = new_text.replace(key, str(value))
+            if new_text == full_text:
+                return
+            for i, run in enumerate(paragraph.runs):
+                if i == 0:
+                    run.text = new_text
+                else:
+                    run.text = ''
+            first_run = paragraph.runs[0] if paragraph.runs else None
+            if first_run:
+                if ' - ' in new_text and ':' in new_text:
+                    first_run.font.size = Pt(6)
+                elif new_text.strip() in ['M', 'F']:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    first_run.font.size = Pt(6)
+                elif '/' in new_text and len(new_text) <= 10 and new_text[0].isdigit():
+                    first_run.font.size = Pt(6)
+                elif ':' in new_text and '-' in new_text and len(new_text) <= 11 and new_text.count(':') == 2:
+                    first_run.font.size = Pt(5)
+                elif len(new_text) > 25:
+                    first_run.font.size = Pt(6)
+                elif len(new_text) > 20:
+                    first_run.font.size = Pt(6)
+                elif len(new_text) > 15:
+                    first_run.font.size = Pt(7)
+
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    if '{{' in cell.text:
-                        for paragraph in cell.paragraphs:
-                            text = paragraph.text
-                            for key, value in replacements.items():
-                                if key in text:
-                                    text = text.replace(key, str(value))
-                            if text != paragraph.text:
-                                paragraph.text = text
-                                # Font adjustments for different content types
-                                if ':' in text and '-' in text and len(text) <= 11 and text.count(':') == 2:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(5)
-                                elif text.strip() in ['M', 'F']:
-                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(6)
-                                elif '/' in text and len(text) <= 10 and text[0].isdigit():
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(6)
-                                elif ' - ' in text and ':' in text:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(6)
-                                elif len(text) > 25:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(6)
-                                elif len(text) > 20:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(6)
-                                elif len(text) > 15:
-                                    for run in paragraph.runs:
-                                        run.font.size = Pt(7)
+                    for paragraph in cell.paragraphs:
+                        process_paragraph(paragraph)
 
+        for paragraph in doc.paragraphs:
+            process_paragraph(paragraph)
     try:
         # Parse date range
         date_range = request.GET.get('date_range')
@@ -2897,6 +2903,7 @@ def generate_attendance_docx(request, schedule_id):
                 if len(students) >= 60:
                     break
         logger.error(f"✓ {len(students)} students loaded")
+        student_ids = [s.id for s in students]
 
         # Get attendance dates
         attendance_dates = list(
@@ -2911,7 +2918,7 @@ def generate_attendance_docx(request, schedule_id):
         attendance_qs = AttendanceRecord.objects.filter(
             class_schedule=class_schedule,
             date__range=[start_date, end_date],
-            student__role='Student'
+            student__id__in=student_ids
         ).select_related('student')
 
         attendance_data = defaultdict(lambda: defaultdict(dict))
