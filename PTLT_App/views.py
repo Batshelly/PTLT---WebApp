@@ -2928,6 +2928,8 @@ def generate_attendance_docx(request, schedule_id):
                 'time_out': record.time_out,
                 'status': record.status,
             }
+        for record in attendance_qs:
+            logger.error(f"DEBUG RECORD → Student: {record.student.last_name}, {record.student.first_name} | Date: {record.date} | Status: '{record.status}' | time_in: {record.time_in} | time_out: {record.time_out}")
         logger.error(f"✓ {len(attendance_dates)} dates with attendance")
 
         # Build professor times
