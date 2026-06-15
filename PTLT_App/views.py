@@ -2974,6 +2974,7 @@ def generate_attendance_docx(request, schedule_id):
                 replacements1[f'{{{{student{i}_sex}}}}'] = student.sex[0] if student.sex else ''
                 for j in range(1, 9):
                     key = f'{{{{student{i}_time{j}}}}}'
+                    value = ''
                     if j - 1 < len(attendance_dates):
                         d = attendance_dates[j - 1]
                         if d in attendance_data[student.id]:
@@ -3031,6 +3032,7 @@ def generate_attendance_docx(request, schedule_id):
                     replacements2[f'{{{{student{student_num}_sex}}}}'] = student.sex[0] if student.sex else ''
                     for j in range(1, 9):
                         key = f'{{{{student{student_num}_time{j}}}}}'
+                        value = ''
                         if j - 1 < len(attendance_dates):
                             d = attendance_dates[j - 1]
                             if d in attendance_data[student.id]:
