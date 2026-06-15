@@ -2988,7 +2988,7 @@ def generate_attendance_docx(request, schedule_id):
                         d = attendance_dates[j - 1]
                         if d in attendance_data[student.id]:
                             att = attendance_data[student.id][d]
-                            if att['status'] in ['Present', 'Late']:
+                            if att['status'].upper() in ['PRESENT', 'LATE']:
                                 time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                                 time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                 if time_in_str and time_out_str:
@@ -3046,7 +3046,7 @@ def generate_attendance_docx(request, schedule_id):
                             d = attendance_dates[j - 1]
                             if d in attendance_data[student.id]:
                                 att = attendance_data[student.id][d]
-                                if att['status'] in ['Present', 'Late']:
+                                if att['status'].upper() in ['PRESENT', 'LATE']:
                                     time_in_str = att['time_in'].strftime('%H:%M') if att['time_in'] else ''
                                     time_out_str = att['time_out'].strftime('%H:%M') if att['time_out'] else ''
                                     if time_in_str and time_out_str:
