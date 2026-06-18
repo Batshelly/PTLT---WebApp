@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from pathlib import Path
 import dj_database_url
+from dotenv import load_dotenv   # ADD THIS
+
+load_dotenv() 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -187,6 +190,7 @@ CSRF_TRUSTED_ORIGINS = [
     'https://www.tupc-ptlt.online',  # Add www version
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://127.0.0.1:8009',
 ]
 
 # Session configuration (applies to both development and production)
